@@ -47,28 +47,39 @@ const formatDate = (dateString: string) => {
 };
 
 export async function exportTransactionsToExcel(startDate: string, endDate: string) {
-  // Fetch transactions
-  const { data: transactions, error: transError } = await supabase
-    .from('transactions')
-    .select('*')
-    .gte('created_at', `${startDate}T00:00:00`)
-    .lte('created_at', `${endDate}T23:59:59`)
-    .order('created_at', { ascending: false });
+  try {
+    // Fetch transactions
+    const { data: transactions, error: transError } = await supabase
+      .from('transactions')
+      .select('*')
+      .gte('created_at', `${startDate}T00:00:00`)
+      .lte('created_at', `${endDate}T23:59:59`)
+      .order('created_at', { ascending: false });
 
-  if (transError) throw transError;
+    if (transError) {
+      console.error('Error fetching transactions:', transError);
+      throw new Error(`Gagal memuat transaksi: ${transError.message}`);
+    }
 
-  // Fetch transaction items with products
-  const transactionIds = transactions?.map(t => t.id) || [];
-  
-  const { data: items, error: itemsError } = await supabase
-    .from('transaction_items')
-    .select(`
-      *,
-      products:product_id (name)
-    `)
-    .in('transaction_id', transactionIds);
+    // Fetch transaction items with products
+    const transactionIds = transactions?.map(t => t.id) || [];
+    
+    let items: any[] = [];
+    if (transactionIds.length > 0) {
+      const { data: itemsData, error: itemsError } = await supabase
+        .from('transaction_items')
+        .select(`
+          *,
+          products:product_id (name)
+        `)
+        .in('transaction_id', transactionIds);
 
-  if (itemsError) throw itemsError;
+      if (itemsError) {
+        console.error('Error fetching transaction items:', itemsError);
+      } else {
+        items = itemsData || [];
+      }
+    }
 
   // Build export data
   const exportData: any[] = [];
@@ -117,51 +128,63 @@ export async function exportTransactionsToExcel(startDate: string, endDate: stri
   ];
   ws['!cols'] = colWidths;
 
-  // Download
-  const fileName = `Laporan_Transaksi_${startDate}_${endDate}.xlsx`;
-  XLSX.writeFile(wb, fileName);
+    // Download
+    const fileName = `Laporan_Transaksi_${startDate}_${endDate}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  } catch (error) {
+    console.error('Export transactions error:', error);
+    throw error;
+  }
 }
 
 export async function exportExpensesToExcel(startDate: string, endDate: string) {
-  const { data: expenses, error } = await supabase
-    .from('expenses')
-    .select('*')
-    .gte('expense_date', startDate)
-    .lte('expense_date', endDate)
-    .order('expense_date', { ascending: false });
+  try {
+    const { data: expenses, error } = await supabase
+      .from('expenses')
+      .select('*')
+      .gte('expense_date', startDate)
+      .lte('expense_date', endDate)
+      .order('expense_date', { ascending: false });
 
-  if (error) throw error;
+    if (error) {
+      console.error('Error fetching expenses:', error);
+      throw new Error(`Gagal memuat pengeluaran: ${error.message}`);
+    }
 
-  const exportData = expenses?.map((exp) => ({
-    'Tanggal': formatDate(exp.expense_date),
-    'Deskripsi': exp.description,
-    'Kategori': exp.category || '-',
-    'Jumlah': Number(exp.amount),
-  })) || [];
+    const exportData = expenses?.map((exp) => ({
+      'Tanggal': formatDate(exp.expense_date),
+      'Deskripsi': exp.description,
+      'Kategori': exp.category || '-',
+      'Jumlah': Number(exp.amount),
+    })) || [];
 
-  // Add total row
-  const total = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
-  exportData.push({
-    'Tanggal': '',
-    'Deskripsi': 'TOTAL PENGELUARAN',
-    'Kategori': '',
-    'Jumlah': total,
-  });
+    // Add total row
+    const total = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+    exportData.push({
+      'Tanggal': '',
+      'Deskripsi': 'TOTAL PENGELUARAN',
+      'Kategori': '',
+      'Jumlah': total,
+    });
 
-  const ws = XLSX.utils.json_to_sheet(exportData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Pengeluaran');
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pengeluaran');
 
-  const colWidths = [
-    { wch: 18 },
-    { wch: 40 },
-    { wch: 15 },
-    { wch: 15 },
-  ];
-  ws['!cols'] = colWidths;
+    const colWidths = [
+      { wch: 18 },
+      { wch: 40 },
+      { wch: 15 },
+      { wch: 15 },
+    ];
+    ws['!cols'] = colWidths;
 
-  const fileName = `Laporan_Pengeluaran_${startDate}_${endDate}.xlsx`;
-  XLSX.writeFile(wb, fileName);
+    const fileName = `Laporan_Pengeluaran_${startDate}_${endDate}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  } catch (error) {
+    console.error('Export expenses error:', error);
+    throw error;
+  }
 }
 
 export async function exportFullReportToExcel(startDate: string, endDate: string) {
