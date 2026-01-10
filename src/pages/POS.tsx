@@ -259,6 +259,17 @@ export default function POS() {
     setCart((prevCart) => prevCart.filter((_, i) => i !== index));
   };
 
+  const updateCartFileName = (index: number, fileName: string) => {
+    setCart((prevCart) =>
+      prevCart.map((item, i) => {
+        if (i === index) {
+          return { ...item, file_name: fileName };
+        }
+        return item;
+      })
+    );
+  };
+
   const cartTotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.subtotal, 0);
   }, [cart]);
@@ -314,6 +325,7 @@ export default function POS() {
         transaction_id: transaction.id,
         product_id: item.type === 'product' ? item.product_id : null,
         custom_name: item.type === 'custom' ? item.custom_name : null,
+        file_name: item.file_name || null,
         length: item.length || null,
         width: item.width || null,
         real_width: item.real_width || null,
@@ -361,6 +373,7 @@ export default function POS() {
           unit: item.product.unit,
         } : undefined,
         custom_name: item.custom_name,
+        file_name: item.file_name,
         quantity: item.quantity,
         unit_price: item.unit_price,
         subtotal: item.subtotal,
@@ -662,6 +675,20 @@ export default function POS() {
                           </Button>
                         </div>
                       </div>
+                      
+                      {/* File Name / Keterangan Input */}
+                      <div className="mt-2">
+                        <Input
+                          placeholder="Judul File / Keterangan (opsional)"
+                          value={item.file_name || ''}
+                          onChange={(e) => updateCartFileName(index, e.target.value)}
+                          className="h-8 text-xs"
+                        />
+                        {item.type === 'product' && item.product?.category === 'Print' && !item.file_name && (
+                          <p className="text-xs text-warning mt-1">💡 Sebaiknya isi judul file untuk produk print</p>
+                        )}
+                      </div>
+                      
                       <div className="mt-2 text-right">
                         <p className="font-semibold text-primary font-mono-numbers">
                           {formatCurrency(item.subtotal)}

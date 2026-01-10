@@ -102,6 +102,7 @@ export interface CartItem {
   product_id?: string;
   product?: Product;
   custom_name?: string;
+  file_name?: string; // Judul file / keterangan untuk produk (terutama untuk Print/Custom)
   length?: number;
   width?: number;
   real_width?: number;
