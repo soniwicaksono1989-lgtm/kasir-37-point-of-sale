@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useReactToPrint } from 'react-to-print';
 import { 
   Search, 
   Plus, 
@@ -11,7 +12,9 @@ import {
   Package,
   PenLine,
   Printer,
-  CheckCircle2
+  CheckCircle2,
+  Download,
+  Loader2
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,7 +22,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -29,7 +32,18 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { Product, CartItem, Customer, CustomerType, TransactionStatus, getMarkupWidth } from '@/types/database';
 import { CustomerSearchInput } from '@/components/pos/CustomerSearchInput';
-import { generatePOSReceiptPDF, POSTransaction, POSCartItem } from '@/lib/pdfGenerator';
+import { downloadA5ReceiptPDF, fetchStoreSettings, POSTransaction, POSCartItem } from '@/lib/pdfGenerator';
+import { ThermalReceipt } from '@/components/pos/ThermalReceipt';
+
+// Store settings type for thermal receipt
+interface StoreSettings {
+  store_name: string;
+  address: string | null;
+  phone: string | null;
+  bank_name: string | null;
+  bank_account_number: string | null;
+  bank_account_name: string | null;
+}
 
 export default function POS() {
   const { user } = useAuth();
@@ -53,6 +67,11 @@ export default function POS() {
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<POSTransaction | null>(null);
   const [lastCartItems, setLastCartItems] = useState<POSCartItem[]>([]);
+  
+  // Print states
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [storeSettings, setStoreSettings] = useState<StoreSettings | null>(null);
+  const thermalReceiptRef = useRef<HTMLDivElement>(null);
 
   // Print product dimension inputs
   const [printLength, setPrintLength] = useState<number>(0);
@@ -374,25 +393,58 @@ export default function POS() {
     }
   };
 
-  const handlePrintReceipt = async (format: 'A5' | 'Thermal80mm') => {
+  // Fetch store settings when success modal opens
+  useEffect(() => {
+    if (isSuccessOpen && !storeSettings) {
+      fetchStoreSettings().then(setStoreSettings);
+    }
+  }, [isSuccessOpen]);
+
+  // Handle A5 PDF Download (direct download, no popup blocker)
+  const handleDownloadA5 = async () => {
     if (!lastTransaction || lastCartItems.length === 0) {
       toast.error('Data transaksi tidak tersedia');
       return;
     }
 
+    if (isPrinting) return;
+    setIsPrinting(true);
+
     try {
-      await generatePOSReceiptPDF(lastTransaction, lastCartItems, format);
-      toast.success(`Nota ${format === 'A5' ? 'A5' : 'Thermal'} dibuka di tab baru`);
+      await downloadA5ReceiptPDF(lastTransaction, lastCartItems);
+      toast.success('Nota A5 berhasil diunduh');
     } catch (error) {
-      console.error('Print error:', error);
-      toast.error('Gagal membuat nota');
+      console.error('Download error:', error);
+      toast.error('Gagal mengunduh nota');
+    } finally {
+      setIsPrinting(false);
     }
   };
+
+  // Handle Thermal Print using react-to-print
+  const handleThermalPrint = useReactToPrint({
+    contentRef: thermalReceiptRef,
+    documentTitle: `Struk_${lastTransaction?.invoice_number || 'thermal'}`,
+    onBeforePrint: async () => {
+      setIsPrinting(true);
+      return Promise.resolve();
+    },
+    onAfterPrint: () => {
+      setIsPrinting(false);
+      toast.success('Dialog cetak thermal dibuka');
+    },
+    onPrintError: (errorLocation, error) => {
+      console.error('Print error:', errorLocation, error);
+      setIsPrinting(false);
+      toast.error('Gagal mencetak nota thermal');
+    },
+  });
 
   const closeSuccessModal = () => {
     setIsSuccessOpen(false);
     setLastTransaction(null);
     setLastCartItems([]);
+    setStoreSettings(null);
   };
 
   const formatCurrency = (amount: number) => {
@@ -865,18 +917,28 @@ export default function POS() {
                     <Button
                       variant="outline"
                       className="gap-2"
-                      onClick={() => handlePrintReceipt('A5')}
+                      onClick={handleDownloadA5}
+                      disabled={isPrinting}
                     >
-                      <Printer className="h-4 w-4" />
-                      Nota A5
+                      {isPrinting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      Download A5
                     </Button>
                     <Button
                       variant="outline"
                       className="gap-2"
-                      onClick={() => handlePrintReceipt('Thermal80mm')}
+                      onClick={() => handleThermalPrint()}
+                      disabled={isPrinting}
                     >
-                      <Receipt className="h-4 w-4" />
-                      Thermal 80mm
+                      {isPrinting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Printer className="h-4 w-4" />
+                      )}
+                      Cetak Thermal
                     </Button>
                   </div>
                 </div>
@@ -894,6 +956,18 @@ export default function POS() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Hidden Thermal Receipt for react-to-print */}
+        <div style={{ display: 'none' }}>
+          {lastTransaction && lastCartItems.length > 0 && (
+            <ThermalReceipt
+              ref={thermalReceiptRef}
+              transaction={lastTransaction}
+              cartItems={lastCartItems}
+              storeSettings={storeSettings}
+            />
+          )}
+        </div>
       </div>
     </MainLayout>
   );
