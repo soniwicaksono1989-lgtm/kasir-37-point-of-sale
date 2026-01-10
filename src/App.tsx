@@ -12,6 +12,8 @@ import Products from "./pages/Products";
 import Customers from "./pages/Customers";
 import Transactions from "./pages/Transactions";
 import Expenses from "./pages/Expenses";
+import Settings from "./pages/Settings";
+import Reports from "./pages/Reports";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -105,7 +107,7 @@ function AppRoutes() {
       
       <Route path="/reports" element={
         <ProtectedRoute allowedRoles={['admin']}>
-          <Dashboard />
+          <Reports />
         </ProtectedRoute>
       } />
       
@@ -117,7 +119,7 @@ function AppRoutes() {
       
       <Route path="/settings" element={
         <ProtectedRoute allowedRoles={['admin']}>
-          <Dashboard />
+          <Settings />
         </ProtectedRoute>
       } />
       
