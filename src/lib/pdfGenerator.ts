@@ -60,27 +60,47 @@ const formatDate = (dateString: string) => {
 };
 
 async function getStoreSettings(): Promise<StoreSettings | null> {
-  const { data } = await supabase
-    .from('store_settings')
-    .select('*')
-    .limit(1)
-    .maybeSingle();
-  return data;
+  try {
+    const { data, error } = await supabase
+      .from('store_settings')
+      .select('*')
+      .limit(1)
+      .maybeSingle();
+    
+    if (error) {
+      console.error('Error fetching store settings:', error);
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.error('Store settings fetch error:', error);
+    return null;
+  }
 }
 
 async function getTransactionItems(transactionId: string): Promise<TransactionItem[]> {
-  const { data } = await supabase
-    .from('transaction_items')
-    .select(`
-      *,
-      product:product_id (name, category, unit)
-    `)
-    .eq('transaction_id', transactionId);
-  
-  return (data || []).map(item => ({
-    ...item,
-    product: item.product as TransactionItem['product']
-  }));
+  try {
+    const { data, error } = await supabase
+      .from('transaction_items')
+      .select(`
+        *,
+        product:product_id (name, category, unit)
+      `)
+      .eq('transaction_id', transactionId);
+    
+    if (error) {
+      console.error('Error fetching transaction items:', error);
+      return [];
+    }
+    
+    return (data || []).map(item => ({
+      ...item,
+      product: item.product as TransactionItem['product']
+    }));
+  } catch (error) {
+    console.error('Transaction items fetch error:', error);
+    return [];
+  }
 }
 
 export async function generateReceiptPDF(

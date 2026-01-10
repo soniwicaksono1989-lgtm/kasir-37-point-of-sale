@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -46,76 +47,99 @@ export default function Dashboard() {
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
 
+  const [isLoading, setIsLoading] = useState(true);
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
   const fetchDashboardData = async () => {
-    // Get current month stats
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+    setIsLoading(true);
+    try {
+      // Get current month stats
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
 
-    // Fetch transactions
-    const { data: transactions } = await supabase
-      .from('transactions')
-      .select('*')
-      .gte('created_at', startOfMonth)
-      .lte('created_at', endOfMonth);
+      // Fetch transactions
+      const { data: transactions, error: transError } = await supabase
+        .from('transactions')
+        .select('*')
+        .gte('created_at', startOfMonth)
+        .lte('created_at', endOfMonth);
 
-    // Fetch expenses
-    const { data: expenses } = await supabase
-      .from('expenses')
-      .select('*')
-      .gte('expense_date', startOfMonth.split('T')[0])
-      .lte('expense_date', endOfMonth.split('T')[0]);
+      if (transError) {
+        console.error('Error fetching transactions:', transError);
+        throw transError;
+      }
 
-    // Calculate stats
-    const totalRevenue = transactions?.reduce((sum, t) => sum + Number(t.amount_paid), 0) || 0;
-    const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
-    const totalPiutang = transactions
-      ?.filter((t) => t.status !== 'Lunas')
-      .reduce((sum, t) => sum + (Number(t.total_price) - Number(t.amount_paid)), 0) || 0;
-    const totalTransactions = transactions?.length || 0;
+      // Fetch expenses
+      const { data: expenses, error: expError } = await supabase
+        .from('expenses')
+        .select('*')
+        .gte('expense_date', startOfMonth.split('T')[0])
+        .lte('expense_date', endOfMonth.split('T')[0]);
 
-    setStats({
-      totalRevenue,
-      totalExpenses,
-      totalPiutang,
-      totalTransactions,
-      revenueChange: 12.5, // Placeholder
-    });
+      if (expError) {
+        console.error('Error fetching expenses:', expError);
+        // Continue without expenses if error (admin only table)
+      }
 
-    // Generate chart data for last 7 days
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (6 - i));
-      return date.toISOString().split('T')[0];
-    });
+      // Calculate stats
+      const totalRevenue = transactions?.reduce((sum, t) => sum + Number(t.amount_paid), 0) || 0;
+      const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+      const totalPiutang = transactions
+        ?.filter((t) => t.status !== 'Lunas')
+        .reduce((sum, t) => sum + (Number(t.total_price) - Number(t.amount_paid)), 0) || 0;
+      const totalTransactions = transactions?.length || 0;
 
-    const chartDataMap = last7Days.map((date) => {
-      const dayTransactions = transactions?.filter(
-        (t) => t.created_at.split('T')[0] === date
-      );
-      const dayExpenses = expenses?.filter((e) => e.expense_date === date);
+      setStats({
+        totalRevenue,
+        totalExpenses,
+        totalPiutang,
+        totalTransactions,
+        revenueChange: 12.5, // Placeholder
+      });
 
-      return {
-        date: new Date(date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' }),
-        revenue: dayTransactions?.reduce((sum, t) => sum + Number(t.amount_paid), 0) || 0,
-        expenses: dayExpenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0,
-      };
-    });
+      // Generate chart data for last 7 days
+      const last7Days = Array.from({ length: 7 }, (_, i) => {
+        const date = new Date();
+        date.setDate(date.getDate() - (6 - i));
+        return date.toISOString().split('T')[0];
+      });
 
-    setChartData(chartDataMap);
+      const chartDataMap = last7Days.map((date) => {
+        const dayTransactions = transactions?.filter(
+          (t) => t.created_at.split('T')[0] === date
+        );
+        const dayExpenses = expenses?.filter((e) => e.expense_date === date);
 
-    // Recent transactions
-    const { data: recent } = await supabase
-      .from('transactions')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(5);
+        return {
+          date: new Date(date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' }),
+          revenue: dayTransactions?.reduce((sum, t) => sum + Number(t.amount_paid), 0) || 0,
+          expenses: dayExpenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0,
+        };
+      });
 
-    setRecentTransactions(recent || []);
+      setChartData(chartDataMap);
+
+      // Recent transactions
+      const { data: recent, error: recentError } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (recentError) {
+        console.error('Error fetching recent transactions:', recentError);
+      }
+
+      setRecentTransactions(recent || []);
+    } catch (error) {
+      console.error('Dashboard data error:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const formatCurrency = (amount: number) => {
