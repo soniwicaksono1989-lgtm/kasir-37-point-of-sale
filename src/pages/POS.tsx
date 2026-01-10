@@ -5,7 +5,7 @@ import {
   Minus, 
   Trash2, 
   ShoppingCart, 
-  User, 
+  User,
   Receipt,
   Calculator,
   Package,
@@ -25,7 +25,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { Product, CartItem, CustomerType, TransactionStatus, getMarkupWidth } from '@/types/database';
+import { Product, CartItem, Customer, CustomerType, TransactionStatus, getMarkupWidth } from '@/types/database';
+import { CustomerSearchInput } from '@/components/pos/CustomerSearchInput';
 
 export default function POS() {
   const { user } = useAuth();
@@ -35,6 +36,7 @@ export default function POS() {
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [customerType, setCustomerType] = useState<CustomerType>('End User');
   const [customerName, setCustomerName] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [amountPaid, setAmountPaid] = useState<number>(0);
   const [notes, setNotes] = useState('');
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -266,6 +268,7 @@ export default function POS() {
         .from('transactions')
         .insert({
           invoice_number: invoiceNumber,
+          customer_id: selectedCustomer?.id || null,
           customer_name: customerName || null,
           customer_type: customerType,
           total_price: cartTotal,
@@ -315,6 +318,7 @@ export default function POS() {
       // Reset form
       setCart([]);
       setCustomerName('');
+      setSelectedCustomer(null);
       setAmountPaid(0);
       setNotes('');
       setIsCheckoutOpen(false);
@@ -582,14 +586,22 @@ export default function POS() {
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label>Nama Customer (Opsional)</Label>
-                    <Input
-                      placeholder="Nama customer"
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                    />
-                  </div>
+                  <CustomerSearchInput
+                    value={customerName}
+                    onChange={(value) => {
+                      setCustomerName(value);
+                      // Clear selected customer if manually typing different name
+                      if (selectedCustomer && value !== selectedCustomer.name) {
+                        setSelectedCustomer(null);
+                      }
+                    }}
+                    onSelectCustomer={(customer) => {
+                      setSelectedCustomer(customer);
+                      setCustomerName(customer.name);
+                      setCustomerType(customer.customer_type);
+                    }}
+                    selectedCustomerId={selectedCustomer?.id}
+                  />
 
                   <div className="p-4 rounded-lg bg-secondary/50">
                     <div className="flex justify-between mb-2">
