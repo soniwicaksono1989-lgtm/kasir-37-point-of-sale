@@ -98,6 +98,11 @@ export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
             return (
               <div key={index} style={{ marginBottom: '6px' }}>
                 <div style={{ fontWeight: '500' }}>{productName}</div>
+                {item.file_name && (
+                  <div style={{ fontSize: '10px', fontStyle: 'italic', paddingLeft: '8px', color: '#555' }}>
+                    File: {item.file_name}
+                  </div>
+                )}
                 {item.length && item.width && (
                   <div style={{ fontSize: '10px', paddingLeft: '8px' }}>
                     {item.length}m × {item.width}m → {item.real_width}m

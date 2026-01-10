@@ -129,6 +129,7 @@ export interface POSCartItem {
     unit: string;
   };
   custom_name?: string;
+  file_name?: string; // Judul file / keterangan
   quantity: number;
   unit_price: number;
   subtotal: number;
@@ -155,11 +156,12 @@ export async function downloadA5ReceiptPDF(
 ): Promise<void> {
   const store = await getStoreSettings();
   
-  // Convert cart items to transaction items format
-  const items: TransactionItem[] = cartItems.map(item => ({
+  // Convert cart items to transaction items format (with file_name)
+  const items = cartItems.map(item => ({
     id: item.id,
     product_id: item.type === 'product' ? item.product_id || null : null,
     custom_name: item.type === 'custom' ? item.custom_name || null : null,
+    file_name: item.file_name || null,
     quantity: item.quantity,
     unit_price: item.unit_price,
     subtotal: item.subtotal,
@@ -276,8 +278,14 @@ async function generateA5ReceiptDownload(
     let productName = item.custom_name || item.product?.name || 'Produk';
     let description = '';
     
+    // Add file_name if exists
+    if ((item as any).file_name) {
+      description = `File: ${(item as any).file_name}`;
+    }
+    
     if (item.length && item.width) {
-      description = `(${item.length}m × ${item.width}m → ${item.real_width}m)`;
+      const dimensionInfo = `(${item.length}m × ${item.width}m → ${item.real_width}m)`;
+      description = description ? `${description}\n${dimensionInfo}` : dimensionInfo;
     }
 
     return [
