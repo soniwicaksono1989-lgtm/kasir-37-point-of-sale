@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Receipt, Search, CreditCard, Eye } from 'lucide-react';
+import { Receipt, Search, CreditCard, Eye, Printer, FileText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { Transaction, TransactionItem, TransactionStatus } from '@/types/database';
+import { generateReceiptPDF } from '@/lib/pdfGenerator';
 
 export default function Transactions() {
   const { user } = useAuth();
@@ -367,6 +368,40 @@ export default function Transactions() {
                   <span className="text-xl font-bold text-primary font-mono-numbers">
                     {formatCurrency(selectedTransaction.total_price)}
                   </span>
+                </div>
+
+                {/* Print Buttons */}
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={async () => {
+                      try {
+                        await generateReceiptPDF(selectedTransaction, 'A5');
+                        toast.success('PDF Invoice A5 berhasil dibuat!');
+                      } catch (e) {
+                        toast.error('Gagal membuat PDF');
+                      }
+                    }}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Cetak A5
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={async () => {
+                      try {
+                        await generateReceiptPDF(selectedTransaction, 'Thermal80mm');
+                        toast.success('PDF Struk Thermal berhasil dibuat!');
+                      } catch (e) {
+                        toast.error('Gagal membuat PDF');
+                      }
+                    }}
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Cetak Thermal
+                  </Button>
                 </div>
               </div>
             )}
