@@ -9,7 +9,9 @@ import {
   Receipt,
   Calculator,
   Package,
-  PenLine
+  PenLine,
+  Printer,
+  CheckCircle2
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,11 +24,12 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { Product, CartItem, Customer, CustomerType, TransactionStatus, getMarkupWidth } from '@/types/database';
 import { CustomerSearchInput } from '@/components/pos/CustomerSearchInput';
+import { generatePOSReceiptPDF, POSTransaction, POSCartItem } from '@/lib/pdfGenerator';
 
 export default function POS() {
   const { user } = useAuth();
@@ -45,6 +48,11 @@ export default function POS() {
   const [customProductPrice, setCustomProductPrice] = useState<number>(0);
   const [customProductQty, setCustomProductQty] = useState<number>(1);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Success modal state
+  const [isSuccessOpen, setIsSuccessOpen] = useState(false);
+  const [lastTransaction, setLastTransaction] = useState<POSTransaction | null>(null);
+  const [lastCartItems, setLastCartItems] = useState<POSCartItem[]>([]);
 
   // Print product dimension inputs
   const [printLength, setPrintLength] = useState<number>(0);
@@ -311,17 +319,51 @@ export default function POS() {
         });
       }
 
-      toast.success('Transaksi berhasil!', {
-        description: `Invoice: ${invoiceNumber}`,
-      });
+      // Prepare data for success modal and printing
+      const posTransaction: POSTransaction = {
+        invoice_number: invoiceNumber,
+        customer_name: customerName || null,
+        customer_type: customerType,
+        total_price: cartTotal,
+        amount_paid: amountPaid,
+        status: transactionStatus,
+        notes: notes || null,
+        created_at: new Date().toISOString(),
+      };
 
-      // Reset form
+      const posCartItems: POSCartItem[] = cart.map((item) => ({
+        id: item.id,
+        type: item.type,
+        product_id: item.product_id,
+        product: item.product ? {
+          id: item.product.id,
+          name: item.product.name,
+          category: item.product.category,
+          unit: item.product.unit,
+        } : undefined,
+        custom_name: item.custom_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        subtotal: item.subtotal,
+        length: item.length,
+        width: item.width,
+        real_width: item.real_width,
+      }));
+
+      // Store for success modal
+      setLastTransaction(posTransaction);
+      setLastCartItems(posCartItems);
+
+      // Close checkout dialog and open success modal
+      setIsCheckoutOpen(false);
+      setIsSuccessOpen(true);
+
+      // Reset form but keep data for printing
       setCart([]);
       setCustomerName('');
       setSelectedCustomer(null);
       setAmountPaid(0);
       setNotes('');
-      setIsCheckoutOpen(false);
 
     } catch (error: unknown) {
       console.error('Checkout error:', error);
@@ -330,6 +372,27 @@ export default function POS() {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handlePrintReceipt = async (format: 'A5' | 'Thermal80mm') => {
+    if (!lastTransaction || lastCartItems.length === 0) {
+      toast.error('Data transaksi tidak tersedia');
+      return;
+    }
+
+    try {
+      await generatePOSReceiptPDF(lastTransaction, lastCartItems, format);
+      toast.success(`Nota ${format === 'A5' ? 'A5' : 'Thermal'} dibuka di tab baru`);
+    } catch (error) {
+      console.error('Print error:', error);
+      toast.error('Gagal membuat nota');
+    }
+  };
+
+  const closeSuccessModal = () => {
+    setIsSuccessOpen(false);
+    setLastTransaction(null);
+    setLastCartItems([]);
   };
 
   const formatCurrency = (amount: number) => {
@@ -719,6 +782,114 @@ export default function POS() {
             <DialogFooter>
               <Button onClick={addPrintProductToCart} className="gradient-bg text-primary-foreground">
                 Tambah ke Keranjang
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Success Modal with Print Options */}
+        <Dialog open={isSuccessOpen} onOpenChange={setIsSuccessOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-success">
+                <CheckCircle2 className="h-6 w-6" />
+                Transaksi Berhasil!
+              </DialogTitle>
+              <DialogDescription>
+                Transaksi telah tersimpan. Anda dapat mencetak nota atau menutup dialog ini.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {lastTransaction && (
+              <div className="space-y-4 py-4">
+                {/* Invoice Number */}
+                <div className="p-4 rounded-lg bg-secondary/50 text-center">
+                  <p className="text-sm text-muted-foreground">No. Invoice</p>
+                  <p className="text-xl font-bold text-primary font-mono">
+                    {lastTransaction.invoice_number}
+                  </p>
+                </div>
+
+                {/* Summary */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Customer</span>
+                    <span className="font-medium">{lastTransaction.customer_name || 'Walk-in'}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Tipe</span>
+                    <Badge variant="outline">{lastTransaction.customer_type}</Badge>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total</span>
+                    <span className="font-bold text-lg font-mono-numbers">
+                      {formatCurrency(lastTransaction.total_price)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Dibayar</span>
+                    <span className="font-mono-numbers">{formatCurrency(lastTransaction.amount_paid)}</span>
+                  </div>
+                  {lastTransaction.total_price - lastTransaction.amount_paid > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Sisa</span>
+                      <span className="text-destructive font-mono-numbers">
+                        {formatCurrency(lastTransaction.total_price - lastTransaction.amount_paid)}
+                      </span>
+                    </div>
+                  )}
+                  {lastTransaction.amount_paid > lastTransaction.total_price && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Kembalian</span>
+                      <span className="text-success font-mono-numbers">
+                        {formatCurrency(lastTransaction.amount_paid - lastTransaction.total_price)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Status</span>
+                    <Badge className={
+                      lastTransaction.status === 'Lunas' ? 'status-lunas' :
+                      lastTransaction.status === 'DP' ? 'status-dp' : 'status-piutang'
+                    }>
+                      {lastTransaction.status}
+                    </Badge>
+                  </div>
+                </div>
+
+                {/* Print Buttons */}
+                <div className="pt-4 space-y-3">
+                  <p className="text-sm text-muted-foreground text-center">Cetak Nota</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => handlePrintReceipt('A5')}
+                    >
+                      <Printer className="h-4 w-4" />
+                      Nota A5
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => handlePrintReceipt('Thermal80mm')}
+                    >
+                      <Receipt className="h-4 w-4" />
+                      Thermal 80mm
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button 
+                className="w-full" 
+                variant="secondary"
+                onClick={closeSuccessModal}
+              >
+                Selesai
               </Button>
             </DialogFooter>
           </DialogContent>
