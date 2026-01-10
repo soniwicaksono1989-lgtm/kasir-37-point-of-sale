@@ -148,6 +148,39 @@ export interface POSTransaction {
   created_at: string;
 }
 
+// Function to download A5 PDF directly (avoids popup blocker)
+export async function downloadA5ReceiptPDF(
+  transaction: POSTransaction,
+  cartItems: POSCartItem[]
+): Promise<void> {
+  const store = await getStoreSettings();
+  
+  // Convert cart items to transaction items format
+  const items: TransactionItem[] = cartItems.map(item => ({
+    id: item.id,
+    product_id: item.type === 'product' ? item.product_id || null : null,
+    custom_name: item.type === 'custom' ? item.custom_name || null : null,
+    quantity: item.quantity,
+    unit_price: item.unit_price,
+    subtotal: item.subtotal,
+    length: item.length || null,
+    width: item.width || null,
+    real_width: item.real_width || null,
+    product: item.type === 'product' && item.product ? {
+      name: item.product.name,
+      category: item.product.category,
+      unit: item.product.unit,
+    } : null,
+  }));
+
+  await generateA5ReceiptDownload(transaction, items, store);
+}
+
+// Function to get store settings (exported for ThermalReceipt component)
+export async function fetchStoreSettings(): Promise<StoreSettings | null> {
+  return getStoreSettings();
+}
+
 export async function generatePOSReceiptPDF(
   transaction: POSTransaction,
   cartItems: POSCartItem[],
@@ -178,6 +211,180 @@ export async function generatePOSReceiptPDF(
   } else {
     await generateA5ReceiptOnline(transaction, items, store);
   }
+}
+
+// A5 Download version - directly downloads the file
+async function generateA5ReceiptDownload(
+  transaction: POSTransaction,
+  items: TransactionItem[],
+  store: StoreSettings | null
+): Promise<void> {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a5',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  let yPos = 15;
+
+  // Header - Store Info
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text(store?.store_name || 'KASIR 37', pageWidth / 2, yPos, { align: 'center' });
+  yPos += 6;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  if (store?.address) {
+    doc.text(store.address, pageWidth / 2, yPos, { align: 'center' });
+    yPos += 4;
+  }
+  if (store?.phone) {
+    doc.text(`Telp: ${store.phone}`, pageWidth / 2, yPos, { align: 'center' });
+    yPos += 4;
+  }
+
+  // Line separator
+  yPos += 2;
+  doc.setLineWidth(0.5);
+  doc.line(10, yPos, pageWidth - 10, yPos);
+  yPos += 8;
+
+  // Invoice Info
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('INVOICE', pageWidth / 2, yPos, { align: 'center' });
+  yPos += 6;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  
+  const leftCol = 12;
+  const rightCol = pageWidth - 12;
+  
+  doc.text(`No. Invoice: ${transaction.invoice_number}`, leftCol, yPos);
+  doc.text(`Tanggal: ${formatDate(transaction.created_at)}`, rightCol, yPos, { align: 'right' });
+  yPos += 5;
+  
+  doc.text(`Customer: ${transaction.customer_name || 'Walk-in'}`, leftCol, yPos);
+  doc.text(`Tipe: ${transaction.customer_type}`, rightCol, yPos, { align: 'right' });
+  yPos += 8;
+
+  // Items Table
+  const tableData = items.map((item, index) => {
+    let productName = item.custom_name || item.product?.name || 'Produk';
+    let description = '';
+    
+    if (item.length && item.width) {
+      description = `(${item.length}m × ${item.width}m → ${item.real_width}m)`;
+    }
+
+    return [
+      (index + 1).toString(),
+      productName + (description ? `\n${description}` : ''),
+      item.quantity.toString(),
+      formatCurrency(item.unit_price),
+      formatCurrency(item.subtotal),
+    ];
+  });
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [['No', 'Produk', 'Qty', 'Harga', 'Subtotal']],
+    body: tableData,
+    theme: 'striped',
+    headStyles: {
+      fillColor: [41, 128, 185],
+      textColor: 255,
+      fontStyle: 'bold',
+      fontSize: 8,
+    },
+    bodyStyles: {
+      fontSize: 8,
+    },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 15, halign: 'center' },
+      3: { cellWidth: 28, halign: 'right' },
+      4: { cellWidth: 28, halign: 'right' },
+    },
+    margin: { left: 10, right: 10 },
+  });
+
+  yPos = (doc as any).lastAutoTable.finalY + 8;
+
+  // Totals
+  const totalsX = pageWidth - 12;
+  
+  doc.setFontSize(9);
+  doc.text('Total:', totalsX - 50, yPos);
+  doc.text(formatCurrency(transaction.total_price), totalsX, yPos, { align: 'right' });
+  yPos += 5;
+  
+  doc.text('Dibayar:', totalsX - 50, yPos);
+  doc.text(formatCurrency(transaction.amount_paid), totalsX, yPos, { align: 'right' });
+  yPos += 5;
+
+  const remaining = transaction.total_price - transaction.amount_paid;
+  if (remaining > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Sisa:', totalsX - 50, yPos);
+    doc.text(formatCurrency(remaining), totalsX, yPos, { align: 'right' });
+    yPos += 5;
+  } else if (remaining < 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Kembalian:', totalsX - 50, yPos);
+    doc.text(formatCurrency(Math.abs(remaining)), totalsX, yPos, { align: 'right' });
+    yPos += 5;
+  }
+
+  // Status Badge
+  yPos += 3;
+  doc.setFont('helvetica', 'bold');
+  const statusColor = transaction.status === 'Lunas' ? [46, 204, 113] : 
+                      transaction.status === 'DP' ? [241, 196, 15] : [231, 76, 60];
+  doc.setFillColor(statusColor[0], statusColor[1], statusColor[2]);
+  doc.roundedRect(pageWidth / 2 - 15, yPos - 4, 30, 8, 2, 2, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(8);
+  doc.text(transaction.status, pageWidth / 2, yPos, { align: 'center' });
+  doc.setTextColor(0, 0, 0);
+  yPos += 10;
+
+  // Bank Info (if not fully paid)
+  if (remaining > 0 && store?.bank_name && store?.bank_account_number) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text('Pembayaran dapat ditransfer ke:', leftCol, yPos);
+    yPos += 4;
+    doc.text(`${store.bank_name}: ${store.bank_account_number}`, leftCol, yPos);
+    yPos += 4;
+    if (store.bank_account_name) {
+      doc.text(`a.n. ${store.bank_account_name}`, leftCol, yPos);
+    }
+    yPos += 8;
+  }
+
+  // Notes
+  if (transaction.notes) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8);
+    doc.text(`Catatan: ${transaction.notes}`, leftCol, yPos);
+    yPos += 8;
+  }
+
+  // Footer
+  doc.setLineWidth(0.5);
+  doc.line(10, yPos, pageWidth - 10, yPos);
+  yPos += 5;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.text('Terima kasih atas kunjungan Anda!', pageWidth / 2, yPos, { align: 'center' });
+
+  // Download directly (no popup blocker issue)
+  doc.save(`Nota_A5_${transaction.invoice_number}.pdf`);
 }
 
 async function generateA5Receipt(
