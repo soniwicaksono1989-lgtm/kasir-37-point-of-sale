@@ -213,7 +213,7 @@ export default function Dashboard() {
                 <div className="flex items-start justify-between">
                   <div className="space-y-2">
                     <p className="text-sm text-muted-foreground">{card.title}</p>
-                    <p className={`text-2xl font-bold font-mono-numbers ${card.color}`}>
+                    <p className={`text-lg sm:text-xl font-bold font-mono-numbers ${card.color} truncate`}>
                       {card.isCurrency === false
                         ? card.value
                         : formatCurrency(card.value)}
