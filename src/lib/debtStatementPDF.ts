@@ -343,5 +343,6 @@ export function openWhatsAppWithMessage(phone: string, message: string): void {
   const formattedPhone = formatWhatsAppNumber(phone);
   const encodedMessage = encodeURIComponent(message);
   const waUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
-  window.open(waUrl, '_blank');
+  // Use _blank with noopener,noreferrer to avoid blocked response issues
+  window.open(waUrl, '_blank', 'noopener,noreferrer');
 }

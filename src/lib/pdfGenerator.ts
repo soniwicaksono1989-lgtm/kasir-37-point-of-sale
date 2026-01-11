@@ -276,17 +276,32 @@ async function generateA5ReceiptDownload(
   // Items Table
   const tableData = items.map((item, index) => {
     let productName = item.custom_name || item.product?.name || 'Produk';
-    let description = '';
+    let descriptionParts: string[] = [];
     
-    // Add file_name if exists
-    if ((item as any).file_name) {
-      description = `File: ${(item as any).file_name}`;
+    // Add file_name if exists - sanitize and validate
+    const fileName = (item as any).file_name;
+    if (fileName && typeof fileName === 'string') {
+      const sanitizedFileName = fileName.replace(/[&%#<>]/g, '').trim();
+      if (sanitizedFileName.length > 0 && sanitizedFileName !== 'undefined') {
+        descriptionParts.push(`File: ${sanitizedFileName}`);
+      }
     }
     
-    if (item.length != null && item.width != null && item.length > 0 && item.width > 0) {
-      const dimensionInfo = `(Ukuran: ${item.length}m x ${item.width}m${item.real_width ? ` → ${item.real_width}m` : ''})`;
-      description = description ? `${description}\n${dimensionInfo}` : dimensionInfo;
+    // Validate dimensions - must be valid positive numbers
+    const hasValidDimensions = 
+      typeof item.length === 'number' && 
+      typeof item.width === 'number' && 
+      item.length > 0 && 
+      item.width > 0 &&
+      !isNaN(item.length) && 
+      !isNaN(item.width);
+    
+    if (hasValidDimensions) {
+      const realWidthText = item.real_width && item.real_width > 0 ? ` → ${item.real_width}m` : '';
+      descriptionParts.push(`(Ukuran: ${item.length}m x ${item.width}m${realWidthText})`);
     }
+
+    const description = descriptionParts.join('\n');
 
     return [
       (index + 1).toString(),
@@ -456,10 +471,20 @@ async function generateA5Receipt(
   // Items Table
   const tableData = items.map((item, index) => {
     let productName = item.custom_name || item.product?.name || 'Produk';
-    let description = '';
     
-    if (item.length != null && item.width != null && item.length > 0 && item.width > 0) {
-      description = `(Ukuran: ${item.length}m x ${item.width}m${item.real_width ? ` → ${item.real_width}m` : ''})`;
+    // Validate dimensions - must be valid positive numbers
+    const hasValidDimensions = 
+      typeof item.length === 'number' && 
+      typeof item.width === 'number' && 
+      item.length > 0 && 
+      item.width > 0 &&
+      !isNaN(item.length) && 
+      !isNaN(item.width);
+    
+    let description = '';
+    if (hasValidDimensions) {
+      const realWidthText = item.real_width && item.real_width > 0 ? ` → ${item.real_width}m` : '';
+      description = `(Ukuran: ${item.length}m x ${item.width}m${realWidthText})`;
     }
 
     return [
