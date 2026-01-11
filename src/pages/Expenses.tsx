@@ -15,15 +15,16 @@ import { toast } from 'sonner';
 import { Expense } from '@/types/database';
 
 const EXPENSE_CATEGORIES = [
-  'Operasional',
-  'Bahan Baku',
-  'Listrik & Air',
+  'Bahan Baku & Tinta',
+  'Servis & Sparepart Mesin',
+  'Listrik, Air & Internet',
+  'Makan',
   'Gaji Karyawan',
-  'Transportasi',
-  'ATK',
-  'Peralatan',
-  'Maintenance',
-  'Lainnya',
+  'Operasional (ATK, Kebersihan, Keamanan)',
+  'Sewa Ruko / Gedung',
+  'Bensin & Ongkir',
+  'Pemasaran / Iklan',
+  'Lain-lain',
 ] as const;
 
 export default function Expenses() {
