@@ -283,8 +283,8 @@ async function generateA5ReceiptDownload(
       description = `File: ${(item as any).file_name}`;
     }
     
-    if (item.length && item.width) {
-      const dimensionInfo = `(${item.length}m × ${item.width}m → ${item.real_width}m)`;
+    if (item.length != null && item.width != null && item.length > 0 && item.width > 0) {
+      const dimensionInfo = `(Ukuran: ${item.length}m x ${item.width}m${item.real_width ? ` → ${item.real_width}m` : ''})`;
       description = description ? `${description}\n${dimensionInfo}` : dimensionInfo;
     }
 
@@ -458,8 +458,8 @@ async function generateA5Receipt(
     let productName = item.custom_name || item.product?.name || 'Produk';
     let description = '';
     
-    if (item.length && item.width) {
-      description = `(${item.length}m × ${item.width}m → ${item.real_width}m)`;
+    if (item.length != null && item.width != null && item.length > 0 && item.width > 0) {
+      description = `(Ukuran: ${item.length}m x ${item.width}m${item.real_width ? ` → ${item.real_width}m` : ''})`;
     }
 
     return [
@@ -627,8 +627,8 @@ async function generateA5ReceiptOnline(
     let productName = item.custom_name || item.product?.name || 'Produk';
     let description = '';
     
-    if (item.length && item.width) {
-      description = `(${item.length}m × ${item.width}m → ${item.real_width}m)`;
+    if (item.length != null && item.width != null && item.length > 0 && item.width > 0) {
+      description = `(Ukuran: ${item.length}m x ${item.width}m${item.real_width ? ` → ${item.real_width}m` : ''})`;
     }
 
     return [

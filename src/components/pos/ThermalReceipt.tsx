@@ -103,9 +103,9 @@ export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
                     File: {item.file_name}
                   </div>
                 )}
-                {item.length && item.width && (
+                {item.length != null && item.width != null && item.length > 0 && item.width > 0 && (
                   <div style={{ fontSize: '10px', paddingLeft: '8px' }}>
-                    {item.length}m × {item.width}m → {item.real_width}m
+                    (Ukuran: {item.length}m x {item.width}m{item.real_width ? ` → ${item.real_width}m` : ''})
                   </div>
                 )}
                 <div style={{ 
