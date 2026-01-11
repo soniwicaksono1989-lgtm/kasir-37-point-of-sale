@@ -59,6 +59,40 @@ const formatDate = (dateString: string) => {
   });
 };
 
+// Helper function to clean/sanitize text values
+const cleanText = (value: string | null | undefined): string => {
+  if (value === null || value === undefined || value === 'undefined' || value === 'null') {
+    return '';
+  }
+  // Remove garbage characters and trim
+  return String(value).replace(/[&%#<>_]+/g, '').trim();
+};
+
+// Helper function to validate dimensions
+const hasValidDimensions = (length: number | null | undefined, width: number | null | undefined): boolean => {
+  return (
+    typeof length === 'number' &&
+    typeof width === 'number' &&
+    length > 0 &&
+    width > 0 &&
+    !isNaN(length) &&
+    !isNaN(width)
+  );
+};
+
+// Helper function to format dimension text (only if valid)
+const formatDimensionText = (
+  length: number | null | undefined,
+  width: number | null | undefined,
+  realWidth: number | null | undefined
+): string => {
+  if (!hasValidDimensions(length, width)) {
+    return '';
+  }
+  const realWidthText = realWidth && realWidth > 0 && !isNaN(realWidth) ? ` → ${realWidth}m` : '';
+  return `(Ukuran: ${length}m x ${width}m${realWidthText})`;
+};
+
 // Helper function to load image as base64
 async function loadImageAsBase64(url: string): Promise<string | null> {
   try {
@@ -340,30 +374,19 @@ async function generateA5ReceiptDownload(
 
   // Items Table
   const tableData = items.map((item, index) => {
-    let productName = item.custom_name || item.product?.name || 'Produk';
-    let descriptionParts: string[] = [];
+    const productName = cleanText(item.custom_name) || cleanText(item.product?.name) || 'Produk';
+    const descriptionParts: string[] = [];
     
     // Add file_name if exists - sanitize and validate
-    const fileName = (item as any).file_name;
-    if (fileName && typeof fileName === 'string') {
-      const sanitizedFileName = fileName.replace(/[&%#<>]/g, '').trim();
-      if (sanitizedFileName.length > 0 && sanitizedFileName !== 'undefined') {
-        descriptionParts.push(`File: ${sanitizedFileName}`);
-      }
+    const fileName = cleanText((item as any).file_name);
+    if (fileName.length > 0) {
+      descriptionParts.push(`File: ${fileName}`);
     }
     
-    // Validate dimensions - must be valid positive numbers
-    const hasValidDimensions = 
-      typeof item.length === 'number' && 
-      typeof item.width === 'number' && 
-      item.length > 0 && 
-      item.width > 0 &&
-      !isNaN(item.length) && 
-      !isNaN(item.width);
-    
-    if (hasValidDimensions) {
-      const realWidthText = item.real_width && item.real_width > 0 ? ` → ${item.real_width}m` : '';
-      descriptionParts.push(`(Ukuran: ${item.length}m x ${item.width}m${realWidthText})`);
+    // Add dimensions if valid
+    const dimensionText = formatDimensionText(item.length, item.width, item.real_width);
+    if (dimensionText) {
+      descriptionParts.push(dimensionText);
     }
 
     const description = descriptionParts.join('\n');
@@ -515,22 +538,8 @@ async function generateA5Receipt(
 
   // Items Table
   const tableData = items.map((item, index) => {
-    let productName = item.custom_name || item.product?.name || 'Produk';
-    
-    // Validate dimensions - must be valid positive numbers
-    const hasValidDimensions = 
-      typeof item.length === 'number' && 
-      typeof item.width === 'number' && 
-      item.length > 0 && 
-      item.width > 0 &&
-      !isNaN(item.length) && 
-      !isNaN(item.width);
-    
-    let description = '';
-    if (hasValidDimensions) {
-      const realWidthText = item.real_width && item.real_width > 0 ? ` → ${item.real_width}m` : '';
-      description = `(Ukuran: ${item.length}m x ${item.width}m${realWidthText})`;
-    }
+    const productName = cleanText(item.custom_name) || cleanText(item.product?.name) || 'Produk';
+    const description = formatDimensionText(item.length, item.width, item.real_width);
 
     return [
       (index + 1).toString(),
@@ -674,12 +683,8 @@ async function generateA5ReceiptOnline(
 
   // Items Table
   const tableData = items.map((item, index) => {
-    let productName = item.custom_name || item.product?.name || 'Produk';
-    let description = '';
-    
-    if (item.length != null && item.width != null && item.length > 0 && item.width > 0) {
-      description = `(Ukuran: ${item.length}m x ${item.width}m${item.real_width ? ` → ${item.real_width}m` : ''})`;
-    }
+    const productName = cleanText(item.custom_name) || cleanText(item.product?.name) || 'Produk';
+    const description = formatDimensionText(item.length, item.width, item.real_width);
 
     return [
       (index + 1).toString(),
@@ -846,7 +851,7 @@ async function generateThermalReceipt(
   // Items
   doc.setFontSize(7);
   items.forEach((item) => {
-    let productName = item.custom_name || item.product?.name || 'Produk';
+    let productName = cleanText(item.custom_name) || cleanText(item.product?.name) || 'Produk';
     
     // Product name (truncate if too long)
     if (productName.length > 30) {
@@ -855,10 +860,13 @@ async function generateThermalReceipt(
     doc.text(productName, 3, yPos);
     yPos += 3;
 
-    // Dimensions if print product
-    if (item.length && item.width) {
+    // Dimensions if print product - only show if valid
+    if (hasValidDimensions(item.length, item.width)) {
+      const realWidthText = item.real_width && item.real_width > 0 && !isNaN(item.real_width) 
+        ? ` → ${item.real_width}m` 
+        : '';
       doc.setFontSize(6);
-      doc.text(`  ${item.length}m × ${item.width}m → ${item.real_width}m`, 3, yPos);
+      doc.text(`  ${item.length}m × ${item.width}m${realWidthText}`, 3, yPos);
       yPos += 3;
       doc.setFontSize(7);
     }
@@ -991,7 +999,7 @@ async function generateThermalReceiptOnline(
   // Items
   doc.setFontSize(7);
   items.forEach((item) => {
-    let productName = item.custom_name || item.product?.name || 'Produk';
+    let productName = cleanText(item.custom_name) || cleanText(item.product?.name) || 'Produk';
     
     if (productName.length > 30) {
       productName = productName.substring(0, 27) + '...';
@@ -999,9 +1007,13 @@ async function generateThermalReceiptOnline(
     doc.text(productName, 3, yPos);
     yPos += 3;
 
-    if (item.length && item.width) {
+    // Dimensions - only show if valid
+    if (hasValidDimensions(item.length, item.width)) {
+      const realWidthText = item.real_width && item.real_width > 0 && !isNaN(item.real_width) 
+        ? ` → ${item.real_width}m` 
+        : '';
       doc.setFontSize(6);
-      doc.text(`  ${item.length}m × ${item.width}m → ${item.real_width}m`, 3, yPos);
+      doc.text(`  ${item.length}m × ${item.width}m${realWidthText}`, 3, yPos);
       yPos += 3;
       doc.setFontSize(7);
     }
