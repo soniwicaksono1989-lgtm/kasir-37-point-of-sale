@@ -5,6 +5,7 @@ interface StoreSettings {
   store_name: string;
   address: string | null;
   phone: string | null;
+  logo_url: string | null;
   bank_name: string | null;
   bank_account_number: string | null;
   bank_account_name: string | null;
@@ -52,19 +53,33 @@ export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
           color: 'black',
         }}
       >
-        {/* Header */}
+        {/* Header with Logo */}
         <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-          <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
+          {storeSettings?.logo_url && (
+            <div style={{ marginBottom: '4px' }}>
+              <img 
+                src={storeSettings.logo_url} 
+                alt="Logo" 
+                style={{ 
+                  maxHeight: '40px', 
+                  maxWidth: '60px', 
+                  objectFit: 'contain',
+                  margin: '0 auto'
+                }} 
+              />
+            </div>
+          )}
+          <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
             {storeSettings?.store_name || 'KASIR 37'}
           </div>
           {storeSettings?.address && (
-            <div style={{ fontSize: '10px', marginTop: '2px' }}>
+            <div style={{ fontSize: '9px', marginTop: '2px' }}>
               {storeSettings.address}
             </div>
           )}
           {storeSettings?.phone && (
-            <div style={{ fontSize: '10px' }}>
-              {storeSettings.phone}
+            <div style={{ fontSize: '9px' }}>
+              Telp: {storeSettings.phone}
             </div>
           )}
         </div>
