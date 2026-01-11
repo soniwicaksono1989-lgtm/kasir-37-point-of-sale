@@ -59,28 +59,30 @@ const formatDate = (dateString: string) => {
   });
 };
 
-// Helper function to clean/sanitize text values
+// Helper function to clean/sanitize text values - removes ALL problematic characters for PDF
 const cleanText = (value: string | null | undefined): string => {
   if (value === null || value === undefined || value === 'undefined' || value === 'null') {
     return '';
   }
-  // Remove garbage characters and trim
-  return String(value).replace(/[&%#<>_]+/g, '').trim();
+  const str = String(value);
+  // Remove all non-printable and problematic characters, keep only alphanumeric, spaces, and basic punctuation
+  return str
+    .replace(/[^\w\s.,\-()/:]/gi, '') // Keep word chars, whitespace, basic punctuation
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim();
 };
 
 // Helper function to validate dimensions
 const hasValidDimensions = (length: number | null | undefined, width: number | null | undefined): boolean => {
-  return (
-    typeof length === 'number' &&
-    typeof width === 'number' &&
-    length > 0 &&
-    width > 0 &&
-    !isNaN(length) &&
-    !isNaN(width)
-  );
+  if (length === null || length === undefined || width === null || width === undefined) {
+    return false;
+  }
+  const l = Number(length);
+  const w = Number(width);
+  return !isNaN(l) && !isNaN(w) && l > 0 && w > 0 && isFinite(l) && isFinite(w);
 };
 
-// Helper function to format dimension text (only if valid)
+// Helper function to format dimension text (only if valid) - uses ASCII-safe characters only
 const formatDimensionText = (
   length: number | null | undefined,
   width: number | null | undefined,
@@ -89,8 +91,12 @@ const formatDimensionText = (
   if (!hasValidDimensions(length, width)) {
     return '';
   }
-  const realWidthText = realWidth && realWidth > 0 && !isNaN(realWidth) ? ` → ${realWidth}m` : '';
-  return `(Ukuran: ${length}m x ${width}m${realWidthText})`;
+  const l = Number(length);
+  const w = Number(width);
+  const rw = realWidth ? Number(realWidth) : 0;
+  const realWidthText = rw > 0 && !isNaN(rw) && isFinite(rw) ? ` - ${rw}m` : '';
+  // Use ASCII-safe format: parentheses, colon, space, x for multiplication
+  return `(Ukuran: ${l}m x ${w}m${realWidthText})`;
 };
 
 // Helper function to load image as base64
