@@ -46,48 +46,81 @@ export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
         className="thermal-receipt"
         style={{
           width: '80mm',
-          fontFamily: 'monospace',
+          fontFamily: "'Courier New', Courier, monospace",
           fontSize: '12px',
-          padding: '5mm',
+          padding: '2mm 1mm',
           backgroundColor: 'white',
           color: 'black',
+          boxSizing: 'border-box',
         }}
       >
-        {/* Header with Logo */}
-        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+        {/* Header with Logo - Centered & Larger */}
+        <div style={{ 
+          textAlign: 'center', 
+          marginBottom: '10px',
+          paddingBottom: '8px'
+        }}>
+          {/* Logo - Larger and Centered */}
           {storeSettings?.logo_url && (
-            <div style={{ marginBottom: '4px' }}>
+            <div style={{ 
+              marginBottom: '8px',
+              display: 'flex',
+              justifyContent: 'center'
+            }}>
               <img 
                 src={storeSettings.logo_url} 
                 alt="Logo" 
                 style={{ 
-                  maxHeight: '40px', 
-                  maxWidth: '60px', 
-                  objectFit: 'contain',
-                  margin: '0 auto'
+                  height: '50px',
+                  width: 'auto',
+                  maxWidth: '35%',
+                  objectFit: 'contain'
                 }} 
               />
             </div>
           )}
-          <div style={{ fontWeight: 'bold', fontSize: '14px' }}>
+          
+          {/* Store Name - Much Larger & Bold */}
+          <div style={{ 
+            fontWeight: 'bold', 
+            fontSize: '22px',
+            letterSpacing: '1px',
+            marginBottom: '6px',
+            lineHeight: '1.2'
+          }}>
             {storeSettings?.store_name || 'KASIR 37'}
           </div>
+          
+          {/* Address - Separate Line with Spacing */}
           {storeSettings?.address && (
-            <div style={{ fontSize: '9px', marginTop: '2px' }}>
+            <div style={{ 
+              fontSize: '10px', 
+              marginTop: '4px',
+              lineHeight: '1.4',
+              paddingLeft: '4px',
+              paddingRight: '4px'
+            }}>
               {storeSettings.address}
             </div>
           )}
+          
+          {/* Phone - Separate Line */}
           {storeSettings?.phone && (
-            <div style={{ fontSize: '9px' }}>
+            <div style={{ 
+              fontSize: '10px',
+              marginTop: '3px'
+            }}>
               Telp: {storeSettings.phone}
             </div>
           )}
         </div>
 
-        {/* Separator */}
-        <div style={{ 
+        {/* Separator - Full Width */}
+        <hr style={{ 
+          border: 'none',
           borderTop: '1px dashed black', 
-          margin: '8px 0' 
+          margin: '8px 0',
+          width: '100%'
         }} />
 
         {/* Invoice Info */}
@@ -97,10 +130,12 @@ export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
           <div>Customer: {transaction.customer_name || 'Walk-in'}</div>
         </div>
 
-        {/* Separator */}
-        <div style={{ 
+        {/* Separator - Full Width */}
+        <hr style={{ 
+          border: 'none',
           borderTop: '1px dashed black', 
-          margin: '8px 0' 
+          margin: '8px 0',
+          width: '100%'
         }} />
 
         {/* Items */}
@@ -152,10 +187,12 @@ export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
           })}
         </div>
 
-        {/* Separator */}
-        <div style={{ 
+        {/* Separator - Full Width */}
+        <hr style={{ 
+          border: 'none',
           borderTop: '1px dashed black', 
-          margin: '8px 0' 
+          margin: '8px 0',
+          width: '100%'
         }} />
 
         {/* Totals */}
@@ -222,11 +259,13 @@ export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
         {/* Bank Info for unpaid */}
         {remaining > 0 && storeSettings?.bank_name && storeSettings?.bank_account_number && (
           <>
-            <div style={{ 
+            <hr style={{ 
+              border: 'none',
               borderTop: '1px dashed black', 
-              margin: '8px 0' 
+              margin: '8px 0',
+              width: '100%'
             }} />
-            <div style={{ fontSize: '10px' }}>
+            <div style={{ fontSize: '10px', textAlign: 'center' }}>
               <div>Transfer ke:</div>
               <div>{storeSettings.bank_name}: {storeSettings.bank_account_number}</div>
               {storeSettings.bank_account_name && (
@@ -237,11 +276,18 @@ export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
         )}
 
         {/* Footer */}
-        <div style={{ 
+        <hr style={{ 
+          border: 'none',
           borderTop: '1px dashed black', 
-          margin: '8px 0' 
+          margin: '8px 0',
+          width: '100%'
         }} />
-        <div style={{ textAlign: 'center', fontSize: '11px' }}>
+        <div style={{ 
+          textAlign: 'center', 
+          fontSize: '11px',
+          paddingTop: '4px',
+          paddingBottom: '8px'
+        }}>
           Terima kasih atas kunjungan Anda!
         </div>
       </div>
