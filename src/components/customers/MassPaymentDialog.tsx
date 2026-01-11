@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Customer, Transaction, TransactionStatus, AllocationResult } from '@/types/database';
+import { PaymentSuccessDialog } from './PaymentSuccessDialog';
 
 interface MassPaymentDialogProps {
   customer: Customer;
@@ -29,6 +30,12 @@ export function MassPaymentDialog({ customer, open, onOpenChange, onSuccess }: M
   const [isProcessing, setIsProcessing] = useState(false);
   const [allocationPreview, setAllocationPreview] = useState<AllocationResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Success dialog state
+  const [isSuccessOpen, setIsSuccessOpen] = useState(false);
+  const [completedAllocations, setCompletedAllocations] = useState<AllocationResult[]>([]);
+  const [completedTotalPaid, setCompletedTotalPaid] = useState(0);
+  const [updatedCustomer, setUpdatedCustomer] = useState<Customer>(customer);
 
   const depositBalance = Number(customer.deposit_balance);
 
@@ -39,6 +46,7 @@ export function MassPaymentDialog({ customer, open, onOpenChange, onSuccess }: M
       setPaymentAmount(0);
       setUseDeposit(false);
       setAllocationPreview([]);
+      setUpdatedCustomer(customer);
     }
   }, [open, customer.id]);
 
@@ -229,7 +237,17 @@ export function MassPaymentDialog({ customer, open, onOpenChange, onSuccess }: M
           .eq('id', customer.id);
 
         if (balanceError) throw balanceError;
+        
+        // Update local customer state for success dialog
+        setUpdatedCustomer({
+          ...customer,
+          deposit_balance: newBalance,
+        });
       }
+
+      // Store completed data for success dialog
+      setCompletedAllocations([...allocationPreview]);
+      setCompletedTotalPaid(totalPayment);
 
       const fullyPaidCount = allocationPreview.filter(a => a.is_fully_paid).length;
       toast.success('Pembayaran berhasil dialokasikan!', {
@@ -237,6 +255,7 @@ export function MassPaymentDialog({ customer, open, onOpenChange, onSuccess }: M
       });
 
       onOpenChange(false);
+      setIsSuccessOpen(true);
       onSuccess();
     } catch (error) {
       console.error('Payment error:', error);
@@ -248,6 +267,7 @@ export function MassPaymentDialog({ customer, open, onOpenChange, onSuccess }: M
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
         <DialogHeader>
@@ -414,5 +434,15 @@ export function MassPaymentDialog({ customer, open, onOpenChange, onSuccess }: M
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Success Dialog with WhatsApp/Print options */}
+    <PaymentSuccessDialog
+      customer={updatedCustomer}
+      allocations={completedAllocations}
+      totalPaid={completedTotalPaid}
+      open={isSuccessOpen}
+      onOpenChange={setIsSuccessOpen}
+    />
+    </>
   );
 }
