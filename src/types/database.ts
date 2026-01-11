@@ -5,6 +5,7 @@ export type ProductCategory = 'Print' | 'Stok' | 'Paket' | 'Custom';
 export type ProductUnit = 'm2' | 'pcs' | 'lembar' | 'box';
 export type TransactionStatus = 'Lunas' | 'Piutang' | 'DP';
 export type CustomerType = 'End User' | 'Reseller';
+export type DepositLogType = 'deposit' | 'usage';
 
 export interface Profile {
   id: string;
@@ -26,6 +27,7 @@ export interface Customer {
   phone: string | null;
   address: string | null;
   customer_type: CustomerType;
+  deposit_balance: number;
   created_at: string;
   updated_at: string;
 }
@@ -63,6 +65,7 @@ export interface TransactionItem {
   transaction_id: string;
   product_id: string | null;
   custom_name: string | null;
+  file_name: string | null;
   length: number | null;
   width: number | null;
   real_width: number | null;
@@ -95,6 +98,24 @@ export interface Payment {
   created_at: string;
 }
 
+export interface DepositLog {
+  id: string;
+  customer_id: string;
+  amount: number;
+  type: DepositLogType;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface PaymentAllocation {
+  id: string;
+  payment_id: string;
+  transaction_id: string;
+  amount: number;
+  created_at: string;
+}
+
 // Cart item for POS
 export interface CartItem {
   id: string;
@@ -118,3 +139,13 @@ export const getMarkupWidth = (width: number): number => {
   if (width <= 1.5) return 1.52;
   return width; // Manual input for > 1.5m
 };
+
+// Payment allocation result
+export interface AllocationResult {
+  transaction_id: string;
+  invoice_number: string;
+  amount_allocated: number;
+  remaining_before: number;
+  remaining_after: number;
+  is_fully_paid: boolean;
+}

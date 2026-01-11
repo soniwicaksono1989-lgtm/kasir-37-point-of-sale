@@ -1,10 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, User, Phone, Loader2 } from 'lucide-react';
+import { Search, User, Phone, Loader2, Wallet } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCustomerSearch } from '@/hooks/useCustomerSearch';
 import { Customer, CustomerType } from '@/types/database';
 import { cn } from '@/lib/utils';
+
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  }).format(value);
+};
 
 interface CustomerSearchInputProps {
   value: string;
@@ -108,6 +116,12 @@ export function CustomerSearchInput({
                   )}>
                     {customer.customer_type}
                   </span>
+                  {customer.deposit_balance > 0 && (
+                    <span className="flex items-center gap-1 text-success">
+                      <Wallet className="h-3 w-3" />
+                      {formatCurrency(customer.deposit_balance)}
+                    </span>
+                  )}
                 </div>
               </div>
             </button>
