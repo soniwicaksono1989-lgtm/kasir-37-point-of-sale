@@ -9,9 +9,22 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { Expense } from '@/types/database';
+
+const EXPENSE_CATEGORIES = [
+  'Operasional',
+  'Bahan Baku',
+  'Listrik & Air',
+  'Gaji Karyawan',
+  'Transportasi',
+  'ATK',
+  'Peralatan',
+  'Maintenance',
+  'Lainnya',
+] as const;
 
 export default function Expenses() {
   const { user } = useAuth();
@@ -308,12 +321,19 @@ export default function Expenses() {
               </div>
 
               <div className="space-y-2">
-                <Label>Kategori (Opsional)</Label>
-                <Input
-                  placeholder="Contoh: Listrik, ATK, dll"
-                  value={formCategory}
-                  onChange={(e) => setFormCategory(e.target.value)}
-                />
+                <Label>Kategori</Label>
+                <Select value={formCategory} onValueChange={setFormCategory}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih kategori" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EXPENSE_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <DialogFooter>
