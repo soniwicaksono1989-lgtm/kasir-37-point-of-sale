@@ -37,6 +37,8 @@ const formatDate = (dateString: string) => {
 
 export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
   ({ transaction, cartItems, storeSettings }, ref) => {
+    const discountAmount = transaction.discount_amount || 0;
+    const subtotal = transaction.total_price + discountAmount; // Reverse calculate subtotal
     const remaining = transaction.total_price - transaction.amount_paid;
     const change = transaction.amount_paid - transaction.total_price;
 
@@ -197,6 +199,28 @@ export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
 
         {/* Totals */}
         <div style={{ marginBottom: '8px' }}>
+          {/* Show subtotal only if there's a discount */}
+          {discountAmount > 0 && (
+            <>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                fontSize: '11px'
+              }}>
+                <span>Subtotal</span>
+                <span>{formatCurrency(subtotal)}</span>
+              </div>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                fontSize: '11px',
+                color: '#22c55e'
+              }}>
+                <span>Diskon</span>
+                <span>- {formatCurrency(discountAmount)}</span>
+              </div>
+            </>
+          )}
           <div style={{ 
             display: 'flex', 
             justifyContent: 'space-between',
