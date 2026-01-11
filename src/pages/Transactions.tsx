@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Receipt, Search, CreditCard, Eye, Printer, FileText } from 'lucide-react';
+import { Receipt, Search, CreditCard, Eye, Printer, FileText, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -9,15 +9,16 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { Transaction, TransactionItem, TransactionStatus } from '@/types/database';
 import { generateReceiptPDF } from '@/lib/pdfGenerator';
 
 export default function Transactions() {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -25,8 +26,11 @@ export default function Transactions() {
   const [transactionItems, setTransactionItems] = useState<TransactionItem[]>([]);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     fetchTransactions();
@@ -161,6 +165,47 @@ export default function Transactions() {
     return Number(transaction.total_price) - Number(transaction.amount_paid);
   };
 
+  const openDeleteConfirm = (transaction: Transaction) => {
+    setTransactionToDelete(transaction);
+    setIsDeleteOpen(true);
+  };
+
+  const handleDeleteTransaction = async () => {
+    if (!transactionToDelete) return;
+
+    setIsDeleting(true);
+
+    try {
+      const { data, error } = await supabase.rpc('delete_transaction_with_cleanup', {
+        p_transaction_id: transactionToDelete.id
+      });
+
+      if (error) throw error;
+
+      const result = data as { success: boolean; invoice_number: string; items_restored: number; deposit_refunded: number };
+
+      let message = `Transaksi ${result.invoice_number} berhasil dihapus`;
+      if (result.items_restored > 0) {
+        message += `. ${result.items_restored} item stok dikembalikan`;
+      }
+      if (result.deposit_refunded > 0) {
+        message += `. Deposit Rp ${result.deposit_refunded.toLocaleString('id-ID')} dikembalikan`;
+      }
+
+      toast.success(message);
+      fetchTransactions();
+      setIsDeleteOpen(false);
+      setTransactionToDelete(null);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal menghapus transaksi', { description: errorMessage });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const isAdmin = role === 'admin';
+
   return (
     <MainLayout>
       <div className="p-6 space-y-6">
@@ -263,11 +308,12 @@ export default function Transactions() {
                           {formatDate(transaction.created_at)}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex justify-end gap-1">
                             <Button
                               size="icon"
                               variant="ghost"
                               onClick={() => openDetail(transaction)}
+                              title="Lihat Detail"
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
@@ -277,8 +323,20 @@ export default function Transactions() {
                                 variant="ghost"
                                 className="text-success hover:text-success"
                                 onClick={() => openPayment(transaction)}
+                                title="Bayar"
                               >
                                 <CreditCard className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {isAdmin && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => openDeleteConfirm(transaction)}
+                                title="Hapus Transaksi"
+                              >
+                                <Trash2 className="h-4 w-4" />
                               </Button>
                             )}
                           </div>
@@ -467,6 +525,47 @@ export default function Transactions() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-destructive">
+                Hapus Transaksi
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2">
+                <p>
+                  Apakah Anda yakin ingin menghapus transaksi{' '}
+                  <span className="font-mono font-semibold text-foreground">
+                    {transactionToDelete?.invoice_number}
+                  </span>
+                  ?
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Tindakan ini akan:
+                </p>
+                <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+                  <li>Mengembalikan stok produk yang terjual</li>
+                  <li>Menghapus riwayat pembayaran secara permanen</li>
+                  <li>Mengembalikan deposit pelanggan (jika ada)</li>
+                </ul>
+                <p className="text-sm font-medium text-destructive mt-2">
+                  Tindakan ini tidak dapat dibatalkan!
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Batal</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteTransaction}
+                disabled={isDeleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeleting ? 'Menghapus...' : 'Ya, Hapus'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </MainLayout>
   );
