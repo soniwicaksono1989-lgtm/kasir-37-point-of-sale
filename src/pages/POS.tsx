@@ -40,6 +40,7 @@ interface StoreSettings {
   store_name: string;
   address: string | null;
   phone: string | null;
+  logo_url: string | null;
   bank_name: string | null;
   bank_account_number: string | null;
   bank_account_name: string | null;

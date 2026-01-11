@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Store, Save, Upload, Building2, Phone, MapPin, CreditCard } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Store, Save, Upload, Building2, Phone, MapPin, CreditCard, Image, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -25,6 +25,8 @@ export default function Settings() {
   const [settings, setSettings] = useState<StoreSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form state
   const [storeName, setStoreName] = useState('');
@@ -110,6 +112,54 @@ export default function Settings() {
       toast.error('Gagal menyimpan pengaturan');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('File harus berupa gambar');
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Ukuran file maksimal 2MB');
+      return;
+    }
+
+    setIsUploadingLogo(true);
+
+    try {
+      // Generate unique filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `logo_${Date.now()}.${fileExt}`;
+
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('branding')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true,
+        });
+
+      if (error) throw error;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('branding')
+        .getPublicUrl(fileName);
+
+      setLogoUrl(urlData.publicUrl);
+      toast.success('Logo berhasil diupload');
+    } catch (error) {
+      console.error('Error uploading logo:', error);
+      toast.error('Gagal mengupload logo');
+    } finally {
+      setIsUploadingLogo(false);
     }
   };
 
@@ -207,33 +257,72 @@ export default function Settings() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="logoUrl">URL Logo Toko</Label>
-              <div className="relative">
-                <Upload className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="logoUrl"
-                  placeholder="https://example.com/logo.png"
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Masukkan URL gambar logo. Gambar akan ditampilkan di header nota.
-              </p>
-              {logoUrl && (
-                <div className="mt-2 p-4 bg-secondary/30 rounded-lg flex items-center gap-4">
-                  <img 
-                    src={logoUrl} 
-                    alt="Logo Preview" 
-                    className="h-16 w-16 object-contain rounded"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
+              <Label htmlFor="logoUpload">Logo Toko</Label>
+              <div className="flex flex-col gap-3">
+                {/* Upload Button */}
+                <div className="flex gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="hidden"
+                    id="logoUpload"
                   />
-                  <span className="text-sm text-muted-foreground">Preview Logo</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploadingLogo}
+                    className="flex-1"
+                  >
+                    {isUploadingLogo ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Mengupload...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4 mr-2" />
+                        Upload Logo
+                      </>
+                    )}
+                  </Button>
                 </div>
-              )}
+                
+                {/* Manual URL Input */}
+                <div className="relative">
+                  <Image className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Atau masukkan URL logo manual"
+                    value={logoUrl}
+                    onChange={(e) => setLogoUrl(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                
+                <p className="text-xs text-muted-foreground">
+                  Upload gambar logo (maks 2MB) atau masukkan URL. Logo akan ditampilkan di header nota.
+                </p>
+                
+                {/* Logo Preview */}
+                {logoUrl && (
+                  <div className="mt-2 p-4 bg-secondary/30 rounded-lg flex items-center gap-4">
+                    <img 
+                      src={logoUrl} 
+                      alt="Logo Preview" 
+                      className="h-16 w-16 object-contain rounded"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm text-muted-foreground">Preview Logo</span>
+                      <p className="text-xs text-muted-foreground truncate max-w-[200px]">{logoUrl}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>

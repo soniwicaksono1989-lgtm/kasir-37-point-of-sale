@@ -56,6 +56,22 @@ const formatDateShort = (dateString: string) => {
   });
 };
 
+// Helper function to load image as base64
+async function loadImageAsBase64(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function getStoreSettings(): Promise<StoreSettings | null> {
   try {
     const { data, error } = await supabase
@@ -123,22 +139,55 @@ export async function generateDebtStatementPDF(customer: CustomerDebt): Promise<
 
   const pageWidth = doc.internal.pageSize.getWidth();
   let yPos = 15;
+  const leftMargin = 15;
+  let textStartX = pageWidth / 2;
+  let textAlign: 'center' | 'left' = 'center';
 
-  // Header - Store Info
-  doc.setFontSize(18);
+  // Try to add logo if available
+  if (store?.logo_url) {
+    try {
+      const logoBase64 = await loadImageAsBase64(store.logo_url);
+      if (logoBase64) {
+        // Add logo on the left (18mm x 18mm)
+        doc.addImage(logoBase64, 'PNG', leftMargin, yPos - 5, 18, 18);
+        textStartX = leftMargin + 22; // Offset text to the right of logo
+        textAlign = 'left';
+      }
+    } catch {
+      // If logo fails to load, continue without it
+    }
+  }
+
+  // Store Name (Bold, Large)
+  doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text(store?.store_name || 'KASIR 37', pageWidth / 2, yPos, { align: 'center' });
-  yPos += 7;
+  if (textAlign === 'left') {
+    doc.text(store?.store_name || 'KASIR 37', textStartX, yPos);
+  } else {
+    doc.text(store?.store_name || 'KASIR 37', textStartX, yPos, { align: 'center' });
+  }
+  yPos += 6;
 
-  doc.setFontSize(10);
+  // Address (separate line)
+  doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   if (store?.address) {
-    doc.text(store.address, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 5;
+    if (textAlign === 'left') {
+      doc.text(store.address, textStartX, yPos);
+    } else {
+      doc.text(store.address, textStartX, yPos, { align: 'center' });
+    }
+    yPos += 4;
   }
+
+  // Phone (separate line)
   if (store?.phone) {
-    doc.text(`Telp: ${store.phone}`, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 5;
+    if (textAlign === 'left') {
+      doc.text(`Telp: ${store.phone}`, textStartX, yPos);
+    } else {
+      doc.text(`Telp: ${store.phone}`, textStartX, yPos, { align: 'center' });
+    }
+    yPos += 4;
   }
 
   // Line separator
@@ -156,16 +205,15 @@ export async function generateDebtStatementPDF(customer: CustomerDebt): Promise<
   // Customer Info
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  const leftCol = 15;
   
-  doc.text(`Kepada Yth:`, leftCol, yPos);
+  doc.text(`Kepada Yth:`, leftMargin, yPos);
   yPos += 5;
   doc.setFont('helvetica', 'bold');
-  doc.text(customer.name, leftCol, yPos);
+  doc.text(customer.name, leftMargin, yPos);
   yPos += 5;
   doc.setFont('helvetica', 'normal');
   if (customer.phone) {
-    doc.text(`Telp: ${customer.phone}`, leftCol, yPos);
+    doc.text(`Telp: ${customer.phone}`, leftMargin, yPos);
     yPos += 5;
   }
   
@@ -256,14 +304,14 @@ export async function generateDebtStatementPDF(customer: CustomerDebt): Promise<
   if (store?.bank_name && store?.bank_account_number) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text('Pembayaran dapat ditransfer ke:', leftCol, yPos);
+    doc.text('Pembayaran dapat ditransfer ke:', leftMargin, yPos);
     yPos += 5;
     doc.setFont('helvetica', 'bold');
-    doc.text(`${store.bank_name}: ${store.bank_account_number}`, leftCol, yPos);
+    doc.text(`${store.bank_name}: ${store.bank_account_number}`, leftMargin, yPos);
     yPos += 4;
     if (store.bank_account_name) {
       doc.setFont('helvetica', 'normal');
-      doc.text(`a.n. ${store.bank_account_name}`, leftCol, yPos);
+      doc.text(`a.n. ${store.bank_account_name}`, leftMargin, yPos);
     }
     yPos += 10;
   }

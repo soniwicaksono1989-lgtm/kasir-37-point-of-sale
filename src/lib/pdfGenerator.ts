@@ -59,6 +59,91 @@ const formatDate = (dateString: string) => {
   });
 };
 
+// Helper function to load image as base64
+async function loadImageAsBase64(url: string): Promise<string | null> {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+// Helper function to add header with logo to PDF
+async function addPDFHeader(
+  doc: jsPDF,
+  store: StoreSettings | null,
+  pageWidth: number,
+  startY: number,
+  showLogo: boolean = true
+): Promise<number> {
+  let yPos = startY;
+  const leftMargin = 12;
+  let textStartX = pageWidth / 2;
+  let textAlign: 'center' | 'left' = 'center';
+
+  // Try to add logo if available
+  if (showLogo && store?.logo_url) {
+    try {
+      const logoBase64 = await loadImageAsBase64(store.logo_url);
+      if (logoBase64) {
+        // Add logo on the left (15mm x 15mm)
+        doc.addImage(logoBase64, 'PNG', leftMargin, yPos - 5, 15, 15);
+        textStartX = leftMargin + 20; // Offset text to the right of logo
+        textAlign = 'left';
+      }
+    } catch {
+      // If logo fails to load, continue without it
+    }
+  }
+
+  // Store Name (Bold, Large)
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  if (textAlign === 'left') {
+    doc.text(store?.store_name || 'KASIR 37', textStartX, yPos);
+  } else {
+    doc.text(store?.store_name || 'KASIR 37', textStartX, yPos, { align: 'center' });
+  }
+  yPos += 5;
+
+  // Address (separate line)
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  if (store?.address) {
+    if (textAlign === 'left') {
+      doc.text(store.address, textStartX, yPos);
+    } else {
+      doc.text(store.address, textStartX, yPos, { align: 'center' });
+    }
+    yPos += 4;
+  }
+
+  // Phone (separate line)
+  if (store?.phone) {
+    if (textAlign === 'left') {
+      doc.text(`Telp: ${store.phone}`, textStartX, yPos);
+    } else {
+      doc.text(`Telp: ${store.phone}`, textStartX, yPos, { align: 'center' });
+    }
+    yPos += 4;
+  }
+
+  // Line separator
+  yPos += 2;
+  doc.setLineWidth(0.5);
+  doc.line(10, yPos, pageWidth - 10, yPos);
+  yPos += 6;
+
+  return yPos;
+}
+
 async function getStoreSettings(): Promise<StoreSettings | null> {
   try {
     const { data, error } = await supabase
@@ -228,30 +313,10 @@ async function generateA5ReceiptDownload(
   });
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  let yPos = 15;
-
-  // Header - Store Info
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text(store?.store_name || 'KASIR 37', pageWidth / 2, yPos, { align: 'center' });
-  yPos += 6;
-
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  if (store?.address) {
-    doc.text(store.address, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 4;
-  }
-  if (store?.phone) {
-    doc.text(`Telp: ${store.phone}`, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 4;
-  }
-
-  // Line separator
+  
+  // Use helper function for header with logo
+  let yPos = await addPDFHeader(doc, store, pageWidth, 15, true);
   yPos += 2;
-  doc.setLineWidth(0.5);
-  doc.line(10, yPos, pageWidth - 10, yPos);
-  yPos += 8;
 
   // Invoice Info
   doc.setFontSize(10);
@@ -422,30 +487,10 @@ async function generateA5Receipt(
   });
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  let yPos = 15;
-
-  // Header - Store Info
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text(store?.store_name || 'KASIR 37', pageWidth / 2, yPos, { align: 'center' });
-  yPos += 6;
-
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  if (store?.address) {
-    doc.text(store.address, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 4;
-  }
-  if (store?.phone) {
-    doc.text(`Telp: ${store.phone}`, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 4;
-  }
-
-  // Line separator
+  
+  // Use helper function for header with logo
+  let yPos = await addPDFHeader(doc, store, pageWidth, 15, true);
   yPos += 2;
-  doc.setLineWidth(0.5);
-  doc.line(10, yPos, pageWidth - 10, yPos);
-  yPos += 8;
 
   // Invoice Info
   doc.setFontSize(10);
@@ -602,30 +647,10 @@ async function generateA5ReceiptOnline(
   });
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  let yPos = 15;
-
-  // Header - Store Info
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text(store?.store_name || 'KASIR 37', pageWidth / 2, yPos, { align: 'center' });
-  yPos += 6;
-
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  if (store?.address) {
-    doc.text(store.address, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 4;
-  }
-  if (store?.phone) {
-    doc.text(`Telp: ${store.phone}`, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 4;
-  }
-
-  // Line separator
+  
+  // Use helper function for header with logo
+  let yPos = await addPDFHeader(doc, store, pageWidth, 15, true);
   yPos += 2;
-  doc.setLineWidth(0.5);
-  doc.line(10, yPos, pageWidth - 10, yPos);
-  yPos += 8;
 
   // Invoice Info
   doc.setFontSize(10);
