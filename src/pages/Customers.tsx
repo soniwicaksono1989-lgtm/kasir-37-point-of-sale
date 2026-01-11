@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Users, Search, Phone, MapPin, Wallet, History, CreditCard } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Search, Phone, MapPin, Wallet, History, CreditCard, FileText, MessageCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -10,11 +10,13 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { Customer, CustomerType } from '@/types/database';
 import { DepositDialog } from '@/components/customers/DepositDialog';
 import { DepositHistoryDialog } from '@/components/customers/DepositHistoryDialog';
 import { MassPaymentDialog } from '@/components/customers/MassPaymentDialog';
+import { DebtActionsDialog } from '@/components/customers/DebtActionsDialog';
 
 export default function Customers() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -37,6 +39,8 @@ export default function Customers() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [paymentCustomer, setPaymentCustomer] = useState<Customer | null>(null);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [debtCustomer, setDebtCustomer] = useState<Customer | null>(null);
+  const [isDebtOpen, setIsDebtOpen] = useState(false);
 
   useEffect(() => {
     fetchCustomers();
@@ -168,6 +172,11 @@ export default function Customers() {
   const openPayment = (customer: Customer) => {
     setPaymentCustomer(customer);
     setIsPaymentOpen(true);
+  };
+
+  const openDebtActions = (customer: Customer) => {
+    setDebtCustomer(customer);
+    setIsDebtOpen(true);
   };
 
   return (
@@ -323,6 +332,21 @@ export default function Customers() {
                       <CreditCard className="h-3 w-3 mr-1" />
                       Bayar
                     </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs px-2"
+                          onClick={() => openDebtActions(customer)}
+                        >
+                          <FileText className="h-3 w-3" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Laporan & Tagihan WhatsApp</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </CardContent>
               </Card>
@@ -421,6 +445,15 @@ export default function Customers() {
             open={isPaymentOpen}
             onOpenChange={setIsPaymentOpen}
             onSuccess={fetchCustomers}
+          />
+        )}
+
+        {/* Debt Actions Dialog */}
+        {debtCustomer && (
+          <DebtActionsDialog
+            customer={debtCustomer}
+            open={isDebtOpen}
+            onOpenChange={setIsDebtOpen}
           />
         )}
       </div>
