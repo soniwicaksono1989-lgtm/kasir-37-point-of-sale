@@ -90,22 +90,37 @@ export const ThermalReceipt = forwardRef<HTMLDivElement, ThermalReceiptProps>(
 
         {/* Items */}
         <div style={{ marginBottom: '8px' }}>
-          {cartItems.map((item, index) => {
+        {cartItems.map((item, index) => {
             const productName = item.type === 'custom' 
-              ? item.custom_name 
-              : item.product?.name || 'Produk';
+              ? (item.custom_name || 'Produk Custom')
+              : (item.product?.name || 'Produk');
+            
+            // Sanitize file_name - remove garbage characters and validate
+            const sanitizedFileName = item.file_name 
+              ? item.file_name.replace(/[&%#<>]/g, '').trim()
+              : null;
+            const hasValidFileName = sanitizedFileName && sanitizedFileName.length > 0 && sanitizedFileName !== 'undefined';
+            
+            // Validate dimensions - must be valid positive numbers
+            const hasValidDimensions = 
+              typeof item.length === 'number' && 
+              typeof item.width === 'number' && 
+              item.length > 0 && 
+              item.width > 0 &&
+              !isNaN(item.length) && 
+              !isNaN(item.width);
             
             return (
               <div key={index} style={{ marginBottom: '6px' }}>
                 <div style={{ fontWeight: '500' }}>{productName}</div>
-                {item.file_name && (
+                {hasValidFileName && (
                   <div style={{ fontSize: '10px', fontStyle: 'italic', paddingLeft: '8px', color: '#555' }}>
-                    File: {item.file_name}
+                    File: {sanitizedFileName}
                   </div>
                 )}
-                {item.length != null && item.width != null && item.length > 0 && item.width > 0 && (
+                {hasValidDimensions && (
                   <div style={{ fontSize: '10px', paddingLeft: '8px' }}>
-                    (Ukuran: {item.length}m x {item.width}m{item.real_width ? ` → ${item.real_width}m` : ''})
+                    (Ukuran: {item.length}m x {item.width}m{item.real_width && item.real_width > 0 ? ` → ${item.real_width}m` : ''})
                   </div>
                 )}
                 <div style={{ 
