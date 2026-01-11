@@ -56,6 +56,7 @@ export default function POS() {
   const [customerName, setCustomerName] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [amountPaid, setAmountPaid] = useState<number>(0);
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [notes, setNotes] = useState('');
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isCustomProductOpen, setIsCustomProductOpen] = useState(false);
@@ -271,9 +272,18 @@ export default function POS() {
     );
   };
 
-  const cartTotal = useMemo(() => {
+  const cartSubtotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.subtotal, 0);
   }, [cart]);
+
+  // Validate discount doesn't exceed subtotal
+  const validatedDiscount = useMemo(() => {
+    return Math.min(Math.max(0, discountAmount), cartSubtotal);
+  }, [discountAmount, cartSubtotal]);
+
+  const cartTotal = useMemo(() => {
+    return cartSubtotal - validatedDiscount;
+  }, [cartSubtotal, validatedDiscount]);
 
   const change = useMemo(() => {
     return amountPaid - cartTotal;
@@ -312,6 +322,7 @@ export default function POS() {
           customer_type: customerType,
           total_price: cartTotal,
           amount_paid: amountPaid,
+          discount_amount: validatedDiscount,
           status: transactionStatus,
           notes: notes || null,
           created_by: user?.id,
@@ -358,6 +369,7 @@ export default function POS() {
         customer_type: customerType,
         total_price: cartTotal,
         amount_paid: amountPaid,
+        discount_amount: validatedDiscount,
         status: transactionStatus,
         notes: notes || null,
         created_at: new Date().toISOString(),
@@ -396,6 +408,7 @@ export default function POS() {
       setCustomerName('');
       setSelectedCustomer(null);
       setAmountPaid(0);
+      setDiscountAmount(0);
       setNotes('');
 
     } catch (error: unknown) {
@@ -704,11 +717,24 @@ export default function POS() {
 
           {/* Cart Footer */}
           <div className="p-4 border-t border-border space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-lg font-semibold text-foreground">Total</span>
-              <span className="text-2xl font-bold text-primary font-mono-numbers">
-                {formatCurrency(cartTotal)}
-              </span>
+            {/* Subtotal and Discount Summary */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-mono-numbers">{formatCurrency(cartSubtotal)}</span>
+              </div>
+              {validatedDiscount > 0 && (
+                <div className="flex items-center justify-between text-sm text-success">
+                  <span>Diskon</span>
+                  <span className="font-mono-numbers">- {formatCurrency(validatedDiscount)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-lg font-semibold text-foreground">Total</span>
+                <span className="text-2xl font-bold text-primary font-mono-numbers">
+                  {formatCurrency(cartTotal)}
+                </span>
+              </div>
             </div>
 
             <Dialog open={isCheckoutOpen} onOpenChange={setIsCheckoutOpen}>
@@ -763,10 +789,44 @@ export default function POS() {
                     </div>
                   )}
 
-                  <div className="p-4 rounded-lg bg-secondary/50">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-muted-foreground">Total</span>
-                      <span className="font-semibold font-mono-numbers">{formatCurrency(cartTotal)}</span>
+                  {/* Price Summary with Discount Input */}
+                  <div className="p-4 rounded-lg bg-secondary/50 space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Subtotal</span>
+                      <span className="font-semibold font-mono-numbers">{formatCurrency(cartSubtotal)}</span>
+                    </div>
+                    
+                    {/* Discount Input */}
+                    <div className="space-y-2">
+                      <Label className="text-sm">Diskon (Rp)</Label>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        value={discountAmount || ''}
+                        onChange={(e) => {
+                          const value = Number(e.target.value);
+                          // Validate: max discount = subtotal
+                          if (value > cartSubtotal) {
+                            toast.error('Diskon tidak boleh melebihi subtotal');
+                            setDiscountAmount(cartSubtotal);
+                          } else {
+                            setDiscountAmount(Math.max(0, value));
+                          }
+                        }}
+                        className="font-mono-numbers"
+                      />
+                    </div>
+                    
+                    {validatedDiscount > 0 && (
+                      <div className="flex justify-between text-success">
+                        <span>Diskon</span>
+                        <span className="font-mono-numbers">- {formatCurrency(validatedDiscount)}</span>
+                      </div>
+                    )}
+                    
+                    <div className="flex justify-between pt-2 border-t border-border">
+                      <span className="font-semibold">Total</span>
+                      <span className="font-bold text-primary font-mono-numbers">{formatCurrency(cartTotal)}</span>
                     </div>
                   </div>
 

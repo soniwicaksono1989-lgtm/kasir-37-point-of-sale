@@ -269,6 +269,7 @@ export interface POSTransaction {
   customer_type: string;
   total_price: number;
   amount_paid: number;
+  discount_amount?: number;
   status: string;
   notes: string | null;
   created_at: string;
@@ -434,12 +435,31 @@ async function generateA5ReceiptDownload(
 
   // Totals
   const totalsX = pageWidth - 12;
+  const discountAmount = (transaction as any).discount_amount || 0;
   
   doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  
+  // Show subtotal if there's a discount
+  if (discountAmount > 0) {
+    const subtotal = transaction.total_price + discountAmount;
+    doc.text('Subtotal:', totalsX - 50, yPos);
+    doc.text(formatCurrency(subtotal), totalsX, yPos, { align: 'right' });
+    yPos += 5;
+    
+    doc.setTextColor(46, 204, 113); // Green color for discount
+    doc.text('Diskon:', totalsX - 50, yPos);
+    doc.text('- ' + formatCurrency(discountAmount), totalsX, yPos, { align: 'right' });
+    doc.setTextColor(0, 0, 0); // Reset to black
+    yPos += 5;
+  }
+  
+  doc.setFont('helvetica', 'bold');
   doc.text('Total:', totalsX - 50, yPos);
   doc.text(formatCurrency(transaction.total_price), totalsX, yPos, { align: 'right' });
   yPos += 5;
   
+  doc.setFont('helvetica', 'normal');
   doc.text('Dibayar:', totalsX - 50, yPos);
   doc.text(formatCurrency(transaction.amount_paid), totalsX, yPos, { align: 'right' });
   yPos += 5;
@@ -584,12 +604,31 @@ async function generateA5Receipt(
 
   // Totals
   const totalsX = pageWidth - 12;
+  const discountAmount = (transaction as any).discount_amount || 0;
   
   doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  
+  // Show subtotal if there's a discount
+  if (discountAmount > 0) {
+    const subtotal = transaction.total_price + discountAmount;
+    doc.text('Subtotal:', totalsX - 50, yPos);
+    doc.text(formatCurrency(subtotal), totalsX, yPos, { align: 'right' });
+    yPos += 5;
+    
+    doc.setTextColor(46, 204, 113); // Green color for discount
+    doc.text('Diskon:', totalsX - 50, yPos);
+    doc.text('- ' + formatCurrency(discountAmount), totalsX, yPos, { align: 'right' });
+    doc.setTextColor(0, 0, 0); // Reset to black
+    yPos += 5;
+  }
+  
+  doc.setFont('helvetica', 'bold');
   doc.text('Total:', totalsX - 50, yPos);
   doc.text(formatCurrency(transaction.total_price), totalsX, yPos, { align: 'right' });
   yPos += 5;
   
+  doc.setFont('helvetica', 'normal');
   doc.text('Dibayar:', totalsX - 50, yPos);
   doc.text(formatCurrency(transaction.amount_paid), totalsX, yPos, { align: 'right' });
   yPos += 5;
