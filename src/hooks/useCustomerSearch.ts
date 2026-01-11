@@ -30,7 +30,8 @@ export function useCustomerSearch(searchQuery: string, debounceMs: number = 300)
 
         setCustomers((data || []).map(c => ({
           ...c,
-          customer_type: c.customer_type as Customer['customer_type']
+          customer_type: c.customer_type as Customer['customer_type'],
+          deposit_balance: Number(c.deposit_balance) || 0,
         })));
       } catch (err) {
         console.error('Customer search error:', err);

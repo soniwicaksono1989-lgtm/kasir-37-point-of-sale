@@ -745,6 +745,23 @@ export default function POS() {
                     selectedCustomerId={selectedCustomer?.id}
                   />
 
+                  {/* Display deposit balance if customer is selected */}
+                  {selectedCustomer && Number(selectedCustomer.deposit_balance) > 0 && (
+                    <div className="p-3 rounded-lg bg-success/10 border border-success/20">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-success">💰 Saldo Deposit</span>
+                        </div>
+                        <span className="font-semibold text-success font-mono-numbers">
+                          {formatCurrency(Number(selectedCustomer.deposit_balance))}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Saldo dapat digunakan untuk pembayaran di halaman Customer
+                      </p>
+                    </div>
+                  )}
+
                   <div className="p-4 rounded-lg bg-secondary/50">
                     <div className="flex justify-between mb-2">
                       <span className="text-muted-foreground">Total</span>

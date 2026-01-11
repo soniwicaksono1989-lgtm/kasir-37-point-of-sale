@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Users, Search, Phone, MapPin } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Search, Phone, MapPin, Wallet, History, CreditCard } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { Customer, CustomerType } from '@/types/database';
+import { DepositDialog } from '@/components/customers/DepositDialog';
+import { DepositHistoryDialog } from '@/components/customers/DepositHistoryDialog';
+import { MassPaymentDialog } from '@/components/customers/MassPaymentDialog';
 
 export default function Customers() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -26,6 +29,14 @@ export default function Customers() {
   const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
   const [formType, setFormType] = useState<CustomerType>('End User');
+
+  // Deposit & Payment dialogs
+  const [depositCustomer, setDepositCustomer] = useState<Customer | null>(null);
+  const [isDepositOpen, setIsDepositOpen] = useState(false);
+  const [historyCustomer, setHistoryCustomer] = useState<Customer | null>(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [paymentCustomer, setPaymentCustomer] = useState<Customer | null>(null);
+  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
 
   useEffect(() => {
     fetchCustomers();
@@ -44,7 +55,8 @@ export default function Customers() {
 
     setCustomers((data || []).map(c => ({
       ...c,
-      customer_type: c.customer_type as CustomerType
+      customer_type: c.customer_type as CustomerType,
+      deposit_balance: Number(c.deposit_balance) || 0,
     })));
   };
 
@@ -133,6 +145,29 @@ export default function Customers() {
       const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
       toast.error('Gagal menghapus customer', { description: errorMessage });
     }
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+    }).format(value);
+  };
+
+  const openDeposit = (customer: Customer) => {
+    setDepositCustomer(customer);
+    setIsDepositOpen(true);
+  };
+
+  const openHistory = (customer: Customer) => {
+    setHistoryCustomer(customer);
+    setIsHistoryOpen(true);
+  };
+
+  const openPayment = (customer: Customer) => {
+    setPaymentCustomer(customer);
+    setIsPaymentOpen(true);
   };
 
   return (
@@ -245,6 +280,50 @@ export default function Customers() {
                       </div>
                     )}
                   </div>
+
+                  {/* Deposit Balance */}
+                  <div className="mt-3 p-2 rounded-lg bg-secondary/30">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Wallet className="h-4 w-4 text-success" />
+                        <span className="text-muted-foreground">Saldo Deposit</span>
+                      </div>
+                      <span className={`font-semibold font-mono-numbers ${customer.deposit_balance > 0 ? 'text-success' : 'text-muted-foreground'}`}>
+                        {formatCurrency(customer.deposit_balance)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 text-xs"
+                      onClick={() => openDeposit(customer)}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Deposit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 text-xs"
+                      onClick={() => openHistory(customer)}
+                    >
+                      <History className="h-3 w-3 mr-1" />
+                      Riwayat
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 text-xs"
+                      onClick={() => openPayment(customer)}
+                    >
+                      <CreditCard className="h-3 w-3 mr-1" />
+                      Bayar
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))
@@ -315,6 +394,35 @@ export default function Customers() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Deposit Dialog */}
+        {depositCustomer && (
+          <DepositDialog
+            customer={depositCustomer}
+            open={isDepositOpen}
+            onOpenChange={setIsDepositOpen}
+            onSuccess={fetchCustomers}
+          />
+        )}
+
+        {/* Deposit History Dialog */}
+        {historyCustomer && (
+          <DepositHistoryDialog
+            customer={historyCustomer}
+            open={isHistoryOpen}
+            onOpenChange={setIsHistoryOpen}
+          />
+        )}
+
+        {/* Mass Payment Dialog */}
+        {paymentCustomer && (
+          <MassPaymentDialog
+            customer={paymentCustomer}
+            open={isPaymentOpen}
+            onOpenChange={setIsPaymentOpen}
+            onSuccess={fetchCustomers}
+          />
+        )}
       </div>
     </MainLayout>
   );

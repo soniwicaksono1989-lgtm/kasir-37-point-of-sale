@@ -19,6 +19,7 @@ export type Database = {
           address: string | null
           created_at: string
           customer_type: Database["public"]["Enums"]["customer_type"]
+          deposit_balance: number
           id: string
           name: string
           phone: string | null
@@ -28,6 +29,7 @@ export type Database = {
           address?: string | null
           created_at?: string
           customer_type?: Database["public"]["Enums"]["customer_type"]
+          deposit_balance?: number
           id?: string
           name: string
           phone?: string | null
@@ -37,12 +39,51 @@ export type Database = {
           address?: string | null
           created_at?: string
           customer_type?: Database["public"]["Enums"]["customer_type"]
+          deposit_balance?: number
           id?: string
           name?: string
           phone?: string | null
           updated_at?: string
         }
         Relationships: []
+      }
+      deposit_logs: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          customer_id: string
+          id: string
+          notes: string | null
+          type: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by?: string | null
+          customer_id: string
+          id?: string
+          notes?: string | null
+          type?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string
+          id?: string
+          notes?: string | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deposit_logs_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       expenses: {
         Row: {
@@ -76,6 +117,45 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      payment_allocations: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          payment_id: string
+          transaction_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          payment_id: string
+          transaction_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          payment_id?: string
+          transaction_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_allocations_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_allocations_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       payments: {
         Row: {
