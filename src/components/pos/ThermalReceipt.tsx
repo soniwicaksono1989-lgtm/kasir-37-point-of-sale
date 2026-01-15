@@ -1,5 +1,31 @@
 import { forwardRef } from 'react';
-import { POSTransaction, POSCartItem } from '@/lib/pdfGenerator';
+
+interface POSCartItem {
+  id: string;
+  type: 'product' | 'custom';
+  product_id?: string;
+  product?: { id: string; name: string; category: string; unit: string };
+  custom_name?: string;
+  file_name?: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+  length?: number;
+  width?: number;
+  real_width?: number;
+}
+
+interface POSTransaction {
+  invoice_number: string;
+  customer_name: string | null;
+  customer_type: string;
+  total_price: number;
+  amount_paid: number;
+  discount_amount?: number;
+  status: string;
+  notes: string | null;
+  created_at: string;
+}
 
 interface StoreSettings {
   store_name: string;

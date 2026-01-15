@@ -39,7 +39,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { Product, CartItem, Customer, CustomerType, TransactionStatus, getMarkupWidth } from '@/types/database';
 import { ThermalReceipt } from '@/components/pos/ThermalReceipt';
-import { StoreSettings } from '@/lib/localStorage';
 
 interface POSCartItem {
   id: string;

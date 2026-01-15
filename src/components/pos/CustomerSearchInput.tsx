@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, User, Phone, Loader2, Wallet } from 'lucide-react';
+import { Search, User, Phone, Wallet } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useCustomerSearch } from '@/hooks/useCustomerSearch';
-import { Customer, CustomerType } from '@/types/database';
+import { customersStorage } from '@/lib/localStorage';
+import { Customer } from '@/types/database';
 import { cn } from '@/lib/utils';
 
 const formatCurrency = (value: number) => {
@@ -31,13 +31,23 @@ export function CustomerSearchInput({
 }: CustomerSearchInputProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value);
-  const { customers, isLoading } = useCustomerSearch(inputValue);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Sync external value changes
   useEffect(() => {
     setInputValue(value);
   }, [value]);
+
+  // Search customers from localStorage
+  useEffect(() => {
+    if (inputValue.trim()) {
+      const results = customersStorage.search(inputValue);
+      setCustomers(results);
+    } else {
+      setCustomers([]);
+    }
+  }, [inputValue]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -76,9 +86,6 @@ export function CustomerSearchInput({
           onFocus={() => inputValue.trim() && setIsOpen(true)}
           className="pl-10 pr-10"
         />
-        {isLoading && (
-          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
-        )}
       </div>
 
       {/* Dropdown Results */}
@@ -130,7 +137,7 @@ export function CustomerSearchInput({
       )}
 
       {/* No results message */}
-      {isOpen && inputValue.trim() && !isLoading && customers.length === 0 && (
+      {isOpen && inputValue.trim() && customers.length === 0 && (
         <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg p-3 text-sm text-muted-foreground text-center">
           Tidak ada customer ditemukan
         </div>

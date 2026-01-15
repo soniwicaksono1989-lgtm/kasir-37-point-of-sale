@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Package, Search } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { productsStorage } from '@/lib/localStorage';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,22 +38,9 @@ export default function Products() {
     fetchProducts();
   }, []);
 
-  const fetchProducts = async () => {
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .order('name');
-
-    if (error) {
-      toast.error('Gagal memuat produk');
-      return;
-    }
-
-    setProducts((data || []).map(p => ({
-      ...p,
-      category: p.category as ProductCategory,
-      unit: p.unit as ProductUnit
-    })));
+  const fetchProducts = () => {
+    const data = productsStorage.getAll();
+    setProducts(data);
   };
 
   const filteredProducts = products.filter((product) => {
@@ -86,7 +73,7 @@ export default function Products() {
     setIsDialogOpen(true);
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!formName.trim()) {
       toast.error('Nama produk wajib diisi');
       return;
@@ -106,19 +93,10 @@ export default function Products() {
       };
 
       if (editingProduct) {
-        const { error } = await supabase
-          .from('products')
-          .update(productData)
-          .eq('id', editingProduct.id);
-
-        if (error) throw error;
+        productsStorage.update(editingProduct.id, productData);
         toast.success('Produk berhasil diperbarui');
       } else {
-        const { error } = await supabase
-          .from('products')
-          .insert(productData);
-
-        if (error) throw error;
+        productsStorage.create(productData);
         toast.success('Produk berhasil ditambahkan');
       }
 
@@ -132,16 +110,11 @@ export default function Products() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (!confirm('Yakin ingin menghapus produk ini?')) return;
 
     try {
-      const { error } = await supabase
-        .from('products')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
+      productsStorage.delete(id);
       toast.success('Produk berhasil dihapus');
       fetchProducts();
     } catch (error: unknown) {
