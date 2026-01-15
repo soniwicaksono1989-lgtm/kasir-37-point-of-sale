@@ -24,29 +24,36 @@ interface NavItem {
   title: string;
   href: string;
   icon: React.ElementType;
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
-  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, adminOnly: true },
   { title: 'Penjualan (POS)', href: '/pos', icon: ShoppingCart },
   { title: 'Produk', href: '/products', icon: Package },
   { title: 'Customer', href: '/customers', icon: Users },
   { title: 'Riwayat Transaksi', href: '/transactions', icon: Receipt },
-  { title: 'Laporan', href: '/reports', icon: BarChart3 },
-  { title: 'Pengeluaran', href: '/expenses', icon: Wallet },
-  { title: 'Pengaturan', href: '/settings', icon: Settings },
+  { title: 'Laporan', href: '/reports', icon: BarChart3, adminOnly: true },
+  { title: 'Pengeluaran', href: '/expenses', icon: Wallet, adminOnly: true },
+  { title: 'Pengaturan', href: '/settings', icon: Settings, adminOnly: true },
 ];
 
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut, user } = useAuth();
+  const { signOut, user, isAdmin } = useAuth();
 
   const handleSignOut = () => {
     signOut();
-    navigate('/');
+    navigate('/login');
   };
+
+  // Filter nav items based on user role
+  const visibleNavItems = navItems.filter(item => {
+    if (item.adminOnly && !isAdmin) return false;
+    return true;
+  });
 
   const NavItemComponent = ({ item }: { item: NavItem }) => {
     const isActive = location.pathname === item.href;
@@ -110,7 +117,7 @@ export function AppSidebar() {
             </div>
             <div>
               <h1 className="font-bold text-lg text-foreground">KASIR 37</h1>
-              <p className="text-xs text-muted-foreground">Admin</p>
+              <p className="text-xs text-muted-foreground capitalize">{user?.role || 'User'}</p>
             </div>
           </div>
         )}
@@ -125,7 +132,7 @@ export function AppSidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {navItems.map((item) => (
+        {visibleNavItems.map((item) => (
           <NavItemComponent key={item.href} item={item} />
         ))}
       </nav>
@@ -140,7 +147,7 @@ export function AppSidebar() {
             <p className="text-sm font-medium text-foreground truncate">
               {user.name}
             </p>
-            <p className="text-xs text-muted-foreground">Admin</p>
+            <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
           </div>
         )}
 
