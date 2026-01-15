@@ -16,8 +16,15 @@ import {
   Download,
   Loader2
 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import { 
+  productsStorage, 
+  customersStorage, 
+  transactionsStorage, 
+  transactionItemsStorage,
+  paymentsStorage,
+  storeSettingsStorage,
+  StoreSettings
+} from '@/lib/localStorage';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,23 +38,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { Product, CartItem, Customer, CustomerType, TransactionStatus, getMarkupWidth } from '@/types/database';
-import { CustomerSearchInput } from '@/components/pos/CustomerSearchInput';
-import { downloadA5ReceiptPDF, fetchStoreSettings, POSTransaction, POSCartItem } from '@/lib/pdfGenerator';
 import { ThermalReceipt } from '@/components/pos/ThermalReceipt';
-
-// Store settings type for thermal receipt
-interface StoreSettings {
-  store_name: string;
-  address: string | null;
-  phone: string | null;
-  logo_url: string | null;
-  bank_name: string | null;
-  bank_account_number: string | null;
-  bank_account_name: string | null;
-}
+import { POSTransaction, POSCartItem } from '@/lib/pdfGenerator';
 
 export default function POS() {
-  const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -64,6 +58,10 @@ export default function POS() {
   const [customProductPrice, setCustomProductPrice] = useState<number>(0);
   const [customProductQty, setCustomProductQty] = useState<number>(1);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Customer search
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [customerSearchResults, setCustomerSearchResults] = useState<Customer[]>([]);
 
   // Success modal state
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
@@ -85,24 +83,20 @@ export default function POS() {
     fetchProducts();
   }, []);
 
-  const fetchProducts = async () => {
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .eq('is_active', true)
-      .order('name');
-
-    if (error) {
-      toast.error('Gagal memuat produk');
-      return;
-    }
-
-    setProducts((data || []).map(p => ({
-      ...p,
-      category: p.category as Product['category'],
-      unit: p.unit as Product['unit']
-    })));
+  const fetchProducts = () => {
+    const data = productsStorage.getAll().filter(p => p.is_active);
+    setProducts(data);
   };
+
+  // Customer search effect
+  useEffect(() => {
+    if (customerSearchQuery.trim()) {
+      const results = customersStorage.search(customerSearchQuery);
+      setCustomerSearchResults(results);
+    } else {
+      setCustomerSearchResults([]);
+    }
+  }, [customerSearchQuery]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((product) => {
@@ -123,7 +117,6 @@ export default function POS() {
         if (item.type === 'product' && item.product) {
           const newPrice = getProductPrice(item.product);
           
-          // For print products, recalculate based on area
           if (item.product.category === 'Print' && item.length && item.real_width) {
             const area = item.length * item.real_width;
             return {
@@ -153,7 +146,6 @@ export default function POS() {
       return;
     }
 
-    // For non-print products
     const existingIndex = cart.findIndex(
       (item) => item.type === 'product' && item.product_id === product.id
     );
@@ -237,7 +229,6 @@ export default function POS() {
     setCart((prevCart) =>
       prevCart.map((item, i) => {
         if (i === index) {
-          // For print products, area-based calculation remains the same
           if (item.type === 'product' && item.product?.category === 'Print' && item.length && item.real_width) {
             const area = item.length * item.real_width;
             return {
@@ -276,7 +267,6 @@ export default function POS() {
     return cart.reduce((sum, item) => sum + item.subtotal, 0);
   }, [cart]);
 
-  // Validate discount doesn't exceed subtotal
   const validatedDiscount = useMemo(() => {
     return Math.min(Math.max(0, discountAmount), cartSubtotal);
   }, [discountAmount, cartSubtotal]);
@@ -295,7 +285,7 @@ export default function POS() {
     return 'Piutang';
   }, [amountPaid, cartTotal]);
 
-  const handleCheckout = async () => {
+  const handleCheckout = () => {
     if (cart.length === 0) {
       toast.error('Keranjang kosong');
       return;
@@ -304,39 +294,23 @@ export default function POS() {
     setIsProcessing(true);
 
     try {
-      // Generate invoice number
-      const { data: invoiceData, error: invoiceError } = await supabase
-        .rpc('generate_invoice_number');
-
-      if (invoiceError) throw invoiceError;
-
-      const invoiceNumber = invoiceData;
-
       // Create transaction
-      const { data: transaction, error: transactionError } = await supabase
-        .from('transactions')
-        .insert({
-          invoice_number: invoiceNumber,
-          customer_id: selectedCustomer?.id || null,
-          customer_name: customerName || null,
-          customer_type: customerType,
-          total_price: cartTotal,
-          amount_paid: amountPaid,
-          discount_amount: validatedDiscount,
-          status: transactionStatus,
-          notes: notes || null,
-          created_by: user?.id,
-        })
-        .select()
-        .single();
-
-      if (transactionError) throw transactionError;
+      const transaction = transactionsStorage.create({
+        customer_id: selectedCustomer?.id || null,
+        customer_name: customerName || null,
+        customer_type: customerType,
+        total_price: cartTotal,
+        amount_paid: amountPaid,
+        status: transactionStatus,
+        notes: notes || null,
+        created_by: 'local-user-001',
+      });
 
       // Create transaction items
       const items = cart.map((item) => ({
         transaction_id: transaction.id,
-        product_id: item.type === 'product' ? item.product_id : null,
-        custom_name: item.type === 'custom' ? item.custom_name : null,
+        product_id: item.type === 'product' ? item.product_id || null : null,
+        custom_name: item.type === 'custom' ? item.custom_name || null : null,
         file_name: item.file_name || null,
         length: item.length || null,
         width: item.width || null,
@@ -346,25 +320,22 @@ export default function POS() {
         subtotal: item.subtotal,
       }));
 
-      const { error: itemsError } = await supabase
-        .from('transaction_items')
-        .insert(items);
-
-      if (itemsError) throw itemsError;
+      transactionItemsStorage.createMany(items);
 
       // Create initial payment if amount paid > 0
       if (amountPaid > 0) {
-        await supabase.from('payments').insert({
+        paymentsStorage.create({
           transaction_id: transaction.id,
           amount: amountPaid,
           payment_method: 'Cash',
-          created_by: user?.id,
+          notes: null,
+          created_by: 'local-user-001',
         });
       }
 
-      // Prepare data for success modal and printing
+      // Prepare data for success modal
       const posTransaction: POSTransaction = {
-        invoice_number: invoiceNumber,
+        invoice_number: transaction.invoice_number,
         customer_name: customerName || null,
         customer_type: customerType,
         total_price: cartTotal,
@@ -372,7 +343,7 @@ export default function POS() {
         discount_amount: validatedDiscount,
         status: transactionStatus,
         notes: notes || null,
-        created_at: new Date().toISOString(),
+        created_at: transaction.created_at,
       };
 
       const posCartItems: POSCartItem[] = cart.map((item) => ({
@@ -395,21 +366,21 @@ export default function POS() {
         real_width: item.real_width,
       }));
 
-      // Store for success modal
       setLastTransaction(posTransaction);
       setLastCartItems(posCartItems);
 
-      // Close checkout dialog and open success modal
       setIsCheckoutOpen(false);
       setIsSuccessOpen(true);
 
-      // Reset form but keep data for printing
+      // Reset form
       setCart([]);
       setCustomerName('');
       setSelectedCustomer(null);
       setAmountPaid(0);
       setDiscountAmount(0);
       setNotes('');
+
+      toast.success('Transaksi berhasil disimpan!');
 
     } catch (error: unknown) {
       console.error('Checkout error:', error);
@@ -423,32 +394,14 @@ export default function POS() {
   // Fetch store settings when success modal opens
   useEffect(() => {
     if (isSuccessOpen && !storeSettings) {
-      fetchStoreSettings().then(setStoreSettings);
+      setStoreSettings(storeSettingsStorage.get());
     }
   }, [isSuccessOpen]);
 
-  // Handle A5 PDF Download (direct download, no popup blocker)
-  const handleDownloadA5 = async () => {
-    if (!lastTransaction || lastCartItems.length === 0) {
-      toast.error('Data transaksi tidak tersedia');
-      return;
-    }
-
-    if (isPrinting) return;
-    setIsPrinting(true);
-
-    try {
-      await downloadA5ReceiptPDF(lastTransaction, lastCartItems);
-      toast.success('Nota A5 berhasil diunduh');
-    } catch (error) {
-      console.error('Download error:', error);
-      toast.error('Gagal mengunduh nota');
-    } finally {
-      setIsPrinting(false);
-    }
+  const handleDownloadA5 = () => {
+    toast.info('Fitur download PDF tidak tersedia dalam mode offline');
   };
 
-  // Handle Thermal Print using react-to-print
   const handleThermalPrint = useReactToPrint({
     contentRef: thermalReceiptRef,
     documentTitle: `Struk_${lastTransaction?.invoice_number || 'thermal'}`,
@@ -755,39 +708,15 @@ export default function POS() {
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
-                  <CustomerSearchInput
-                    value={customerName}
-                    onChange={(value) => {
-                      setCustomerName(value);
-                      // Clear selected customer if manually typing different name
-                      if (selectedCustomer && value !== selectedCustomer.name) {
-                        setSelectedCustomer(null);
-                      }
-                    }}
-                    onSelectCustomer={(customer) => {
-                      setSelectedCustomer(customer);
-                      setCustomerName(customer.name);
-                      setCustomerType(customer.customer_type);
-                    }}
-                    selectedCustomerId={selectedCustomer?.id}
-                  />
-
-                  {/* Display deposit balance if customer is selected */}
-                  {selectedCustomer && Number(selectedCustomer.deposit_balance) > 0 && (
-                    <div className="p-3 rounded-lg bg-success/10 border border-success/20">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-success">💰 Saldo Deposit</span>
-                        </div>
-                        <span className="font-semibold text-success font-mono-numbers">
-                          {formatCurrency(Number(selectedCustomer.deposit_balance))}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Saldo dapat digunakan untuk pembayaran di halaman Customer
-                      </p>
-                    </div>
-                  )}
+                  {/* Customer Name Input */}
+                  <div className="space-y-2">
+                    <Label>Nama Customer</Label>
+                    <Input
+                      placeholder="Nama customer (opsional)"
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                    />
+                  </div>
 
                   {/* Price Summary with Discount Input */}
                   <div className="p-4 rounded-lg bg-secondary/50 space-y-3">
@@ -805,7 +734,6 @@ export default function POS() {
                         value={discountAmount || ''}
                         onChange={(e) => {
                           const value = Number(e.target.value);
-                          // Validate: max discount = subtotal
                           if (value > cartSubtotal) {
                             toast.error('Diskon tidak boleh melebihi subtotal');
                             setDiscountAmount(cartSubtotal);

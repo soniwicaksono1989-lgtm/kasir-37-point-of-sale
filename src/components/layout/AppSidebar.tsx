@@ -24,33 +24,28 @@ interface NavItem {
   title: string;
   href: string;
   icon: React.ElementType;
-  roles: ('admin' | 'kasir')[];
 }
 
 const navItems: NavItem[] = [
-  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['admin'] },
-  { title: 'Penjualan (POS)', href: '/pos', icon: ShoppingCart, roles: ['admin', 'kasir'] },
-  { title: 'Produk', href: '/products', icon: Package, roles: ['admin'] },
-  { title: 'Customer', href: '/customers', icon: Users, roles: ['admin', 'kasir'] },
-  { title: 'Riwayat Transaksi', href: '/transactions', icon: Receipt, roles: ['admin', 'kasir'] },
-  { title: 'Laporan', href: '/reports', icon: BarChart3, roles: ['admin'] },
-  { title: 'Pengeluaran', href: '/expenses', icon: Wallet, roles: ['admin'] },
-  { title: 'Pengaturan', href: '/settings', icon: Settings, roles: ['admin'] },
+  { title: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { title: 'Penjualan (POS)', href: '/pos', icon: ShoppingCart },
+  { title: 'Produk', href: '/products', icon: Package },
+  { title: 'Customer', href: '/customers', icon: Users },
+  { title: 'Riwayat Transaksi', href: '/transactions', icon: Receipt },
+  { title: 'Laporan', href: '/reports', icon: BarChart3 },
+  { title: 'Pengeluaran', href: '/expenses', icon: Wallet },
+  { title: 'Pengaturan', href: '/settings', icon: Settings },
 ];
 
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { role, signOut, user } = useAuth();
+  const { signOut, user } = useAuth();
 
-  const filteredNavItems = navItems.filter((item) => 
-    role && item.roles.includes(role)
-  );
-
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/login');
+  const handleSignOut = () => {
+    signOut();
+    navigate('/');
   };
 
   const NavItemComponent = ({ item }: { item: NavItem }) => {
@@ -115,7 +110,7 @@ export function AppSidebar() {
             </div>
             <div>
               <h1 className="font-bold text-lg text-foreground">KASIR 37</h1>
-              <p className="text-xs text-muted-foreground capitalize">{role || 'Loading...'}</p>
+              <p className="text-xs text-muted-foreground">Admin</p>
             </div>
           </div>
         )}
@@ -130,7 +125,7 @@ export function AppSidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {filteredNavItems.map((item) => (
+        {navItems.map((item) => (
           <NavItemComponent key={item.href} item={item} />
         ))}
       </nav>
@@ -143,9 +138,9 @@ export function AppSidebar() {
         {!collapsed && user && (
           <div className="px-3 py-2">
             <p className="text-sm font-medium text-foreground truncate">
-              {user.email}
+              {user.name}
             </p>
-            <p className="text-xs text-muted-foreground capitalize">{role}</p>
+            <p className="text-xs text-muted-foreground">Admin</p>
           </div>
         )}
 
