@@ -61,6 +61,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       locale: 'en',
     });
 
+    // Handle recovery and invitation tokens from URL hash
+    // The widget auto-detects tokens, we just need to open it
+    const hash = window.location.hash;
+    if (hash) {
+      if (hash.includes('recovery_token') || 
+          hash.includes('invite_token') || 
+          hash.includes('confirmation_token')) {
+        // Open widget - it will automatically detect the token type and show appropriate form
+        netlifyIdentity.open();
+      }
+    }
+
     // Check for existing user on mount
     const currentUser = netlifyIdentity.currentUser();
     if (currentUser) {
