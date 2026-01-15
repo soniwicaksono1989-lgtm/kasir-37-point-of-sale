@@ -1,45 +1,127 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import netlifyIdentity, { User } from 'netlify-identity-widget';
 
-// Simplified auth context without Supabase
-// Single-user mode with LocalStorage
+export type AppRole = 'admin' | 'kasir';
+
+interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: AppRole;
+}
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  user: { id: string; email: string; name: string } | null;
+  user: AuthUser | null;
   loading: boolean;
   signIn: () => void;
   signOut: () => void;
+  hasRole: (role: AppRole) => boolean;
+  isAdmin: boolean;
+  isKasir: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const LOCAL_USER = {
-  id: 'local-user-001',
-  email: 'admin@kasir37.local',
-  name: 'Admin',
+// Extract role from Netlify Identity user metadata
+const extractRole = (netlifyUser: User | null): AppRole => {
+  if (!netlifyUser) return 'kasir';
+  
+  // Check app_metadata.roles array (set via Netlify Identity admin or functions)
+  const roles = netlifyUser.app_metadata?.roles as string[] | undefined;
+  
+  if (roles && Array.isArray(roles)) {
+    if (roles.includes('admin')) return 'admin';
+    if (roles.includes('kasir')) return 'kasir';
+  }
+  
+  // Default to kasir if no role specified
+  return 'kasir';
+};
+
+const mapNetlifyUser = (netlifyUser: User | null): AuthUser | null => {
+  if (!netlifyUser) return null;
+  
+  return {
+    id: netlifyUser.id,
+    email: netlifyUser.email || '',
+    name: netlifyUser.user_metadata?.full_name || netlifyUser.email || 'User',
+    role: extractRole(netlifyUser),
+  };
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(true); // Auto-logged in
-  const [loading] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Initialize Netlify Identity
+    netlifyIdentity.init({
+      container: '#netlify-modal',
+      locale: 'en',
+    });
+
+    // Check for existing user on mount
+    const currentUser = netlifyIdentity.currentUser();
+    if (currentUser) {
+      setUser(mapNetlifyUser(currentUser));
+    }
+    setLoading(false);
+
+    // Listen for login events
+    netlifyIdentity.on('login', (netlifyUser) => {
+      setUser(mapNetlifyUser(netlifyUser));
+      netlifyIdentity.close();
+    });
+
+    // Listen for logout events
+    netlifyIdentity.on('logout', () => {
+      setUser(null);
+    });
+
+    // Listen for init events
+    netlifyIdentity.on('init', (netlifyUser) => {
+      if (netlifyUser) {
+        setUser(mapNetlifyUser(netlifyUser));
+      }
+      setLoading(false);
+    });
+
+    return () => {
+      netlifyIdentity.off('login');
+      netlifyIdentity.off('logout');
+      netlifyIdentity.off('init');
+    };
+  }, []);
 
   const signIn = () => {
-    setIsAuthenticated(true);
+    netlifyIdentity.open('login');
   };
 
   const signOut = () => {
-    setIsAuthenticated(false);
+    netlifyIdentity.logout();
   };
+
+  const hasRole = (role: AppRole): boolean => {
+    return user?.role === role;
+  };
+
+  const isAdmin = user?.role === 'admin';
+  const isKasir = user?.role === 'kasir';
 
   return (
     <AuthContext.Provider value={{ 
-      isAuthenticated, 
-      user: isAuthenticated ? LOCAL_USER : null, 
+      isAuthenticated: !!user, 
+      user, 
       loading, 
       signIn, 
-      signOut 
+      signOut,
+      hasRole,
+      isAdmin,
+      isKasir,
     }}>
       {children}
+      <div id="netlify-modal" />
     </AuthContext.Provider>
   );
 }

@@ -4,7 +4,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 
+import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import POS from "./pages/POS";
 import Products from "./pages/Products";
@@ -20,18 +22,55 @@ const queryClient = new QueryClient();
 function AppRoutes() {
   return (
     <Routes>
+      {/* Public route */}
+      <Route path="/login" element={<Login />} />
+      
       {/* Default route */}
       <Route path="/" element={<Navigate to="/pos" replace />} />
       
-      {/* All routes accessible without login */}
-      <Route path="/dashboard" element={<Dashboard />} />
-      <Route path="/pos" element={<POS />} />
-      <Route path="/products" element={<Products />} />
-      <Route path="/customers" element={<Customers />} />
-      <Route path="/transactions" element={<Transactions />} />
-      <Route path="/reports" element={<Reports />} />
-      <Route path="/expenses" element={<Expenses />} />
-      <Route path="/settings" element={<Settings />} />
+      {/* Routes accessible by all authenticated users */}
+      <Route path="/pos" element={
+        <ProtectedRoute>
+          <POS />
+        </ProtectedRoute>
+      } />
+      <Route path="/products" element={
+        <ProtectedRoute>
+          <Products />
+        </ProtectedRoute>
+      } />
+      <Route path="/customers" element={
+        <ProtectedRoute>
+          <Customers />
+        </ProtectedRoute>
+      } />
+      <Route path="/transactions" element={
+        <ProtectedRoute>
+          <Transactions />
+        </ProtectedRoute>
+      } />
+      
+      {/* Admin-only routes */}
+      <Route path="/dashboard" element={
+        <ProtectedRoute adminOnly>
+          <Dashboard />
+        </ProtectedRoute>
+      } />
+      <Route path="/reports" element={
+        <ProtectedRoute adminOnly>
+          <Reports />
+        </ProtectedRoute>
+      } />
+      <Route path="/expenses" element={
+        <ProtectedRoute adminOnly>
+          <Expenses />
+        </ProtectedRoute>
+      } />
+      <Route path="/settings" element={
+        <ProtectedRoute adminOnly>
+          <Settings />
+        </ProtectedRoute>
+      } />
       
       {/* Catch-all */}
       <Route path="*" element={<NotFound />} />
