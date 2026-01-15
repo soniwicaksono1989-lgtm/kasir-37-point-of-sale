@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Receipt, Search, CreditCard, Eye, Printer, FileText, Trash2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import { 
+  transactionsStorage, 
+  transactionItemsStorage,
+  paymentsStorage,
+  productsStorage,
+} from '@/lib/localStorage';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,21 +13,19 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
-import { Transaction, TransactionItem, TransactionStatus } from '@/types/database';
-import { generateReceiptPDF } from '@/lib/pdfGenerator';
+import { Transaction, TransactionItem, TransactionStatus, Product } from '@/types/database';
 
 export default function Transactions() {
-  const { user, role } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
-  const [transactionItems, setTransactionItems] = useState<TransactionItem[]>([]);
+  const [transactionItems, setTransactionItems] = useState<(TransactionItem & { product?: Product })[]>([]);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -36,36 +38,22 @@ export default function Transactions() {
     fetchTransactions();
   }, []);
 
-  const fetchTransactions = async () => {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      toast.error('Gagal memuat transaksi');
-      return;
-    }
-
-    setTransactions((data || []).map(t => ({
-      ...t,
-      customer_type: t.customer_type as Transaction['customer_type'],
-      status: t.status as Transaction['status']
-    })));
+  const fetchTransactions = () => {
+    const data = transactionsStorage.getAll();
+    setTransactions(data);
   };
 
-  const fetchTransactionItems = async (transactionId: string) => {
-    const { data, error } = await supabase
-      .from('transaction_items')
-      .select('*, product:products(*)')
-      .eq('transaction_id', transactionId);
-
-    if (error) {
-      toast.error('Gagal memuat detail transaksi');
-      return;
-    }
-
-    setTransactionItems(data || []);
+  const fetchTransactionItems = (transactionId: string) => {
+    const items = transactionItemsStorage.getByTransactionId(transactionId);
+    // Attach product data
+    const itemsWithProducts = items.map(item => {
+      if (item.product_id) {
+        const product = productsStorage.getById(item.product_id);
+        return { ...item, product };
+      }
+      return item;
+    });
+    setTransactionItems(itemsWithProducts);
   };
 
   const filteredTransactions = transactions.filter((transaction) => {
@@ -76,9 +64,9 @@ export default function Transactions() {
     return matchesSearch && matchesStatus;
   });
 
-  const openDetail = async (transaction: Transaction) => {
+  const openDetail = (transaction: Transaction) => {
     setSelectedTransaction(transaction);
-    await fetchTransactionItems(transaction.id);
+    fetchTransactionItems(transaction.id);
     setIsDetailOpen(true);
   };
 
@@ -88,7 +76,7 @@ export default function Transactions() {
     setIsPaymentOpen(true);
   };
 
-  const handlePayment = async () => {
+  const handlePayment = () => {
     if (!selectedTransaction || paymentAmount <= 0) {
       toast.error('Masukkan jumlah pembayaran yang valid');
       return;
@@ -98,16 +86,13 @@ export default function Transactions() {
 
     try {
       // Create payment record
-      const { error: paymentError } = await supabase
-        .from('payments')
-        .insert({
-          transaction_id: selectedTransaction.id,
-          amount: paymentAmount,
-          payment_method: 'Cash',
-          created_by: user?.id,
-        });
-
-      if (paymentError) throw paymentError;
+      paymentsStorage.create({
+        transaction_id: selectedTransaction.id,
+        amount: paymentAmount,
+        payment_method: 'Cash',
+        notes: null,
+        created_by: 'local-user-001',
+      });
 
       // Calculate new amount paid
       const newAmountPaid = Number(selectedTransaction.amount_paid) + paymentAmount;
@@ -122,15 +107,10 @@ export default function Transactions() {
       }
 
       // Update transaction
-      const { error: updateError } = await supabase
-        .from('transactions')
-        .update({
-          amount_paid: newAmountPaid,
-          status: newStatus,
-        })
-        .eq('id', selectedTransaction.id);
-
-      if (updateError) throw updateError;
+      transactionsStorage.update(selectedTransaction.id, {
+        amount_paid: newAmountPaid,
+        status: newStatus,
+      });
 
       toast.success('Pembayaran berhasil dicatat');
       fetchTransactions();
@@ -170,29 +150,29 @@ export default function Transactions() {
     setIsDeleteOpen(true);
   };
 
-  const handleDeleteTransaction = async () => {
+  const handleDeleteTransaction = () => {
     if (!transactionToDelete) return;
 
     setIsDeleting(true);
 
     try {
-      const { data, error } = await supabase.rpc('delete_transaction_with_cleanup', {
-        p_transaction_id: transactionToDelete.id
+      // Restore stock for transaction items
+      const items = transactionItemsStorage.getByTransactionId(transactionToDelete.id);
+      items.forEach(item => {
+        if (item.product_id) {
+          const product = productsStorage.getById(item.product_id);
+          if (product && (product.category === 'Stok' || ['pcs', 'lembar', 'box'].includes(product.unit))) {
+            productsStorage.update(item.product_id, {
+              stock: product.stock + item.quantity
+            });
+          }
+        }
       });
 
-      if (error) throw error;
+      // Delete transaction (also deletes items and payments)
+      transactionsStorage.delete(transactionToDelete.id);
 
-      const result = data as { success: boolean; invoice_number: string; items_restored: number; deposit_refunded: number };
-
-      let message = `Transaksi ${result.invoice_number} berhasil dihapus`;
-      if (result.items_restored > 0) {
-        message += `. ${result.items_restored} item stok dikembalikan`;
-      }
-      if (result.deposit_refunded > 0) {
-        message += `. Deposit Rp ${result.deposit_refunded.toLocaleString('id-ID')} dikembalikan`;
-      }
-
-      toast.success(message);
+      toast.success(`Transaksi ${transactionToDelete.invoice_number} berhasil dihapus`);
       fetchTransactions();
       setIsDeleteOpen(false);
       setTransactionToDelete(null);
@@ -203,8 +183,6 @@ export default function Transactions() {
       setIsDeleting(false);
     }
   };
-
-  const isAdmin = role === 'admin';
 
   return (
     <MainLayout>
@@ -328,17 +306,15 @@ export default function Transactions() {
                                 <CreditCard className="h-4 w-4" />
                               </Button>
                             )}
-                            {isAdmin && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                onClick={() => openDeleteConfirm(transaction)}
-                                title="Hapus Transaksi"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => openDeleteConfirm(transaction)}
+                              title="Hapus Transaksi"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -433,13 +409,8 @@ export default function Transactions() {
                   <Button
                     variant="outline"
                     className="flex-1"
-                    onClick={async () => {
-                      try {
-                        await generateReceiptPDF(selectedTransaction, 'A5');
-                        toast.success('PDF Invoice A5 berhasil dibuat!');
-                      } catch (e) {
-                        toast.error('Gagal membuat PDF');
-                      }
+                    onClick={() => {
+                      toast.info('Fitur cetak tidak tersedia dalam mode offline');
                     }}
                   >
                     <FileText className="h-4 w-4 mr-2" />
@@ -448,13 +419,8 @@ export default function Transactions() {
                   <Button
                     variant="outline"
                     className="flex-1"
-                    onClick={async () => {
-                      try {
-                        await generateReceiptPDF(selectedTransaction, 'Thermal80mm');
-                        toast.success('PDF Struk Thermal berhasil dibuat!');
-                      } catch (e) {
-                        toast.error('Gagal membuat PDF');
-                      }
+                    onClick={() => {
+                      toast.info('Fitur cetak tidak tersedia dalam mode offline');
                     }}
                   >
                     <Printer className="h-4 w-4 mr-2" />
@@ -547,7 +513,6 @@ export default function Transactions() {
                 <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
                   <li>Mengembalikan stok produk yang terjual</li>
                   <li>Menghapus riwayat pembayaran secara permanen</li>
-                  <li>Mengembalikan deposit pelanggan (jika ada)</li>
                 </ul>
                 <p className="text-sm font-medium text-destructive mt-2">
                   Tindakan ini tidak dapat dibatalkan!
