@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Store, Save, Upload, Building2, Phone, MapPin, CreditCard, Image, Loader2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { Store, Save, Upload, Building2, Phone, MapPin, CreditCard, Image, Download, Database } from 'lucide-react';
+import { storeSettingsStorage, dataUtils } from '@/lib/localStorage';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,25 +10,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 
-interface StoreSettings {
-  id: string;
-  store_name: string;
-  address: string | null;
-  phone: string | null;
-  logo_url: string | null;
-  bank_name: string | null;
-  bank_account_number: string | null;
-  bank_account_name: string | null;
-}
-
 export default function Settings() {
-  const [settings, setSettings] = useState<StoreSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
-  // Form state
   const [storeName, setStoreName] = useState('');
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
@@ -37,356 +24,151 @@ export default function Settings() {
   const [bankAccountNumber, setBankAccountNumber] = useState('');
   const [bankAccountName, setBankAccountName] = useState('');
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
+  useEffect(() => { fetchSettings(); }, []);
 
-  const fetchSettings = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('store_settings')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (data) {
-        setSettings(data);
-        setStoreName(data.store_name);
-        setAddress(data.address || '');
-        setPhone(data.phone || '');
-        setLogoUrl(data.logo_url || '');
-        setBankName(data.bank_name || '');
-        setBankAccountNumber(data.bank_account_number || '');
-        setBankAccountName(data.bank_account_name || '');
-      }
-    } catch (error) {
-      console.error('Error fetching settings:', error);
-      toast.error('Gagal memuat pengaturan');
-    } finally {
-      setIsLoading(false);
-    }
+  const fetchSettings = () => {
+    setIsLoading(true);
+    const settings = storeSettingsStorage.get();
+    setStoreName(settings.store_name);
+    setAddress(settings.address || '');
+    setPhone(settings.phone || '');
+    setLogoUrl(settings.logo_url || '');
+    setBankName(settings.bank_name || '');
+    setBankAccountNumber(settings.bank_account_number || '');
+    setBankAccountName(settings.bank_account_name || '');
+    setIsLoading(false);
   };
 
-  const handleSave = async () => {
-    if (!storeName.trim()) {
-      toast.error('Nama toko wajib diisi');
-      return;
-    }
-
+  const handleSave = () => {
+    if (!storeName.trim()) { toast.error('Nama toko wajib diisi'); return; }
     setIsSaving(true);
+    storeSettingsStorage.update({
+      store_name: storeName.trim(),
+      address: address.trim() || null,
+      phone: phone.trim() || null,
+      logo_url: logoUrl.trim() || null,
+      bank_name: bankName.trim() || null,
+      bank_account_number: bankAccountNumber.trim() || null,
+      bank_account_name: bankAccountName.trim() || null,
+    });
+    toast.success('Pengaturan berhasil disimpan');
+    setIsSaving(false);
+  };
 
+  // Export data to JSON
+  const handleExportData = () => {
     try {
-      const updateData = {
-        store_name: storeName.trim(),
-        address: address.trim() || null,
-        phone: phone.trim() || null,
-        logo_url: logoUrl.trim() || null,
-        bank_name: bankName.trim() || null,
-        bank_account_number: bankAccountNumber.trim() || null,
-        bank_account_name: bankAccountName.trim() || null,
-      };
-
-      if (settings?.id) {
-        // Update existing
-        const { error } = await supabase
-          .from('store_settings')
-          .update(updateData)
-          .eq('id', settings.id);
-
-        if (error) throw error;
-      } else {
-        // Insert new
-        const { error } = await supabase
-          .from('store_settings')
-          .insert(updateData);
-
-        if (error) throw error;
-      }
-
-      toast.success('Pengaturan berhasil disimpan');
-      fetchSettings();
+      const data = dataUtils.exportAllData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `kasir37_backup_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Data berhasil diekspor!');
     } catch (error) {
-      console.error('Error saving settings:', error);
-      toast.error('Gagal menyimpan pengaturan');
-    } finally {
-      setIsSaving(false);
+      toast.error('Gagal mengekspor data');
     }
   };
 
-  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Import data from JSON
+  const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      toast.error('File harus berupa gambar');
-      return;
-    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target?.result as string);
+        if (!data.products && !data.customers && !data.transactions) {
+          toast.error('Format file tidak valid');
+          return;
+        }
+        if (!confirm('Ini akan menimpa semua data yang ada. Lanjutkan?')) return;
+        dataUtils.importAllData(data);
+        toast.success('Data berhasil diimpor!');
+        fetchSettings();
+        window.location.reload();
+      } catch (error) {
+        toast.error('Gagal membaca file');
+      }
+    };
+    reader.readAsText(file);
+    if (importInputRef.current) importInputRef.current.value = '';
+  };
 
-    // Validate file size (max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error('Ukuran file maksimal 2MB');
-      return;
-    }
-
-    setIsUploadingLogo(true);
-
-    try {
-      // Generate unique filename
-      const fileExt = file.name.split('.').pop();
-      const fileName = `logo_${Date.now()}.${fileExt}`;
-
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from('branding')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: true,
-        });
-
-      if (error) throw error;
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('branding')
-        .getPublicUrl(fileName);
-
-      setLogoUrl(urlData.publicUrl);
-      toast.success('Logo berhasil diupload');
-    } catch (error) {
-      console.error('Error uploading logo:', error);
-      toast.error('Gagal mengupload logo');
-    } finally {
-      setIsUploadingLogo(false);
-    }
+  // Clear all data
+  const handleClearData = () => {
+    if (!confirm('PERINGATAN: Ini akan menghapus SEMUA data! Tindakan ini tidak dapat dibatalkan. Lanjutkan?')) return;
+    if (!confirm('Apakah Anda benar-benar yakin? Semua produk, customer, transaksi, dan pengeluaran akan dihapus!')) return;
+    dataUtils.clearAllData();
+    toast.success('Semua data berhasil dihapus');
+    window.location.reload();
   };
 
   if (isLoading) {
-    return (
-      <MainLayout>
-        <div className="p-6 flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="w-12 h-12 mx-auto mb-4 rounded-full gradient-bg animate-pulse" />
-            <p className="text-muted-foreground">Memuat pengaturan...</p>
-          </div>
-        </div>
-      </MainLayout>
-    );
+    return <MainLayout><div className="p-6 flex items-center justify-center min-h-[400px]"><div className="text-center"><div className="w-12 h-12 mx-auto mb-4 rounded-full gradient-bg animate-pulse" /><p className="text-muted-foreground">Memuat pengaturan...</p></div></div></MainLayout>;
   }
 
   return (
     <MainLayout>
       <div className="p-6 space-y-6 max-w-4xl mx-auto">
-        {/* Header */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Pengaturan Toko</h1>
-            <p className="text-muted-foreground">
-              Kelola identitas toko untuk ditampilkan di nota/invoice
-            </p>
-          </div>
-          <Button 
-            onClick={handleSave} 
-            disabled={isSaving}
-            className="gradient-bg text-primary-foreground"
-          >
-            <Save className="h-4 w-4 mr-2" />
-            {isSaving ? 'Menyimpan...' : 'Simpan'}
-          </Button>
+          <div><h1 className="text-2xl font-bold text-foreground">Pengaturan Toko</h1><p className="text-muted-foreground">Kelola identitas toko untuk ditampilkan di nota/invoice</p></div>
+          <Button onClick={handleSave} disabled={isSaving} className="gradient-bg text-primary-foreground"><Save className="h-4 w-4 mr-2" />{isSaving ? 'Menyimpan...' : 'Simpan'}</Button>
         </div>
 
         {/* Store Identity */}
         <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Store className="h-5 w-5 text-primary" />
-              Identitas Toko
-            </CardTitle>
-            <CardDescription>
-              Informasi dasar toko yang akan tampil di nota
-            </CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Store className="h-5 w-5 text-primary" />Identitas Toko</CardTitle><CardDescription>Informasi dasar toko yang akan tampil di nota</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="storeName">
-                  Nama Toko <span className="text-destructive">*</span>
-                </Label>
-                <div className="relative">
-                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="storeName"
-                    placeholder="Nama toko Anda"
-                    value={storeName}
-                    onChange={(e) => setStoreName(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="phone">No. Telepon</Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="phone"
-                    placeholder="08xxxxxxxxxx"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
+              <div className="space-y-2"><Label>Nama Toko <span className="text-destructive">*</span></Label><div className="relative"><Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Nama toko Anda" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="pl-10" /></div></div>
+              <div className="space-y-2"><Label>No. Telepon</Label><div className="relative"><Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="08xxxxxxxxxx" value={phone} onChange={(e) => setPhone(e.target.value)} className="pl-10" /></div></div>
             </div>
-
+            <div className="space-y-2"><Label>Alamat</Label><div className="relative"><MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Textarea placeholder="Alamat lengkap toko" value={address} onChange={(e) => setAddress(e.target.value)} className="pl-10 min-h-[80px]" rows={2} /></div></div>
             <div className="space-y-2">
-              <Label htmlFor="address">Alamat</Label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Textarea
-                  id="address"
-                  placeholder="Alamat lengkap toko"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="pl-10 min-h-[80px]"
-                  rows={2}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="logoUpload">Logo Toko</Label>
-              <div className="flex flex-col gap-3">
-                {/* Upload Button */}
-                <div className="flex gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoUpload}
-                    className="hidden"
-                    id="logoUpload"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploadingLogo}
-                    className="flex-1"
-                  >
-                    {isUploadingLogo ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Mengupload...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="h-4 w-4 mr-2" />
-                        Upload Logo
-                      </>
-                    )}
-                  </Button>
-                </div>
-                
-                {/* Manual URL Input */}
-                <div className="relative">
-                  <Image className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Atau masukkan URL logo manual"
-                    value={logoUrl}
-                    onChange={(e) => setLogoUrl(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                
-                <p className="text-xs text-muted-foreground">
-                  Upload gambar logo (maks 2MB) atau masukkan URL. Logo akan ditampilkan di header nota.
-                </p>
-                
-                {/* Logo Preview */}
-                {logoUrl && (
-                  <div className="mt-2 p-4 bg-secondary/30 rounded-lg flex items-center gap-4">
-                    <img 
-                      src={logoUrl} 
-                      alt="Logo Preview" 
-                      className="h-16 w-16 object-contain rounded"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                    <div className="flex-1">
-                      <span className="text-sm text-muted-foreground">Preview Logo</span>
-                      <p className="text-xs text-muted-foreground truncate max-w-[200px]">{logoUrl}</p>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <Label>URL Logo</Label>
+              <div className="relative"><Image className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="https://..." value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} className="pl-10" /></div>
+              {logoUrl && <div className="mt-2 p-4 bg-secondary/30 rounded-lg flex items-center gap-4"><img src={logoUrl} alt="Logo Preview" className="h-16 w-16 object-contain rounded" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} /><span className="text-sm text-muted-foreground">Preview Logo</span></div>}
             </div>
           </CardContent>
         </Card>
 
         {/* Bank Information */}
         <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="h-5 w-5 text-primary" />
-              Informasi Rekening Bank
-            </CardTitle>
-            <CardDescription>
-              Detail rekening untuk pembayaran transfer (opsional)
-            </CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5 text-primary" />Informasi Rekening Bank</CardTitle><CardDescription>Detail rekening untuk pembayaran transfer (opsional)</CardDescription></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="bankName">Nama Bank</Label>
-                <Input
-                  id="bankName"
-                  placeholder="BCA, Mandiri, BRI, dll"
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="bankAccountNumber">Nomor Rekening</Label>
-                <Input
-                  id="bankAccountNumber"
-                  placeholder="1234567890"
-                  value={bankAccountNumber}
-                  onChange={(e) => setBankAccountNumber(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="bankAccountName">Atas Nama</Label>
-                <Input
-                  id="bankAccountName"
-                  placeholder="Nama pemilik rekening"
-                  value={bankAccountName}
-                  onChange={(e) => setBankAccountName(e.target.value)}
-                />
-              </div>
+              <div className="space-y-2"><Label>Nama Bank</Label><Input placeholder="BCA, Mandiri, BRI, dll" value={bankName} onChange={(e) => setBankName(e.target.value)} /></div>
+              <div className="space-y-2"><Label>Nomor Rekening</Label><Input placeholder="1234567890" value={bankAccountNumber} onChange={(e) => setBankAccountNumber(e.target.value)} /></div>
+              <div className="space-y-2"><Label>Atas Nama</Label><Input placeholder="Nama pemilik rekening" value={bankAccountName} onChange={(e) => setBankAccountName(e.target.value)} /></div>
             </div>
           </CardContent>
         </Card>
 
         <Separator />
 
-        {/* Save Button (Bottom) */}
-        <div className="flex justify-end">
-          <Button 
-            onClick={handleSave} 
-            disabled={isSaving}
-            size="lg"
-            className="gradient-bg text-primary-foreground"
-          >
-            <Save className="h-4 w-4 mr-2" />
-            {isSaving ? 'Menyimpan...' : 'Simpan Pengaturan'}
-          </Button>
-        </div>
+        {/* Backup & Restore */}
+        <Card className="glass-card border-warning/50">
+          <CardHeader><CardTitle className="flex items-center gap-2"><Database className="h-5 w-5 text-warning" />Backup & Restore Data</CardTitle><CardDescription>Ekspor atau impor data aplikasi dalam format JSON</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Button variant="outline" onClick={handleExportData} className="h-20 flex-col gap-2"><Download className="h-6 w-6" /><span>Ekspor Data (JSON)</span></Button>
+              <div>
+                <input ref={importInputRef} type="file" accept=".json" onChange={handleImportData} className="hidden" />
+                <Button variant="outline" onClick={() => importInputRef.current?.click()} className="w-full h-20 flex-col gap-2"><Upload className="h-6 w-6" /><span>Impor Data (JSON)</span></Button>
+              </div>
+              <Button variant="destructive" onClick={handleClearData} className="h-20 flex-col gap-2"><Database className="h-6 w-6" /><span>Hapus Semua Data</span></Button>
+            </div>
+            <p className="text-sm text-muted-foreground">⚠️ Backup data secara berkala untuk mencegah kehilangan data. File JSON dapat digunakan untuk memindahkan data ke perangkat lain.</p>
+          </CardContent>
+        </Card>
+
+        <div className="flex justify-end"><Button onClick={handleSave} disabled={isSaving} size="lg" className="gradient-bg text-primary-foreground"><Save className="h-4 w-4 mr-2" />{isSaving ? 'Menyimpan...' : 'Simpan Pengaturan'}</Button></div>
       </div>
     </MainLayout>
   );
