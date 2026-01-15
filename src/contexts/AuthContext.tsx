@@ -15,6 +15,7 @@ interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
   signIn: () => void;
+  signInWithGoogle: () => void;
   signOut: () => void;
   hasRole: (role: AppRole) => boolean;
   isAdmin: boolean;
@@ -110,6 +111,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     netlifyIdentity.open('login');
   };
 
+  const signInWithGoogle = () => {
+    // Redirect to Netlify Identity Google OAuth endpoint
+    const siteUrl = window.location.origin;
+    window.location.href = `${siteUrl}/.netlify/identity/authorize?provider=google`;
+  };
+
   const signOut = () => {
     netlifyIdentity.logout();
   };
@@ -127,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user, 
       loading, 
       signIn, 
+      signInWithGoogle,
       signOut,
       hasRole,
       isAdmin,
