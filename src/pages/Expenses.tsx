@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Wallet, Search, Calendar } from 'lucide-react';
-import { expensesStorage } from '@/lib/localStorage';
+import { expensesStorage } from '@/lib/supabaseStorage';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,7 @@ export default function Expenses() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
   const [formDescription, setFormDescription] = useState('');
   const [formAmount, setFormAmount] = useState<number>(0);
   const [formCategory, setFormCategory] = useState('');
@@ -28,7 +29,18 @@ export default function Expenses() {
 
   useEffect(() => { fetchExpenses(); }, []);
 
-  const fetchExpenses = () => setExpenses(expensesStorage.getAll());
+  const fetchExpenses = async () => {
+    setIsFetching(true);
+    try {
+      const data = await expensesStorage.getAll();
+      setExpenses(data);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal memuat pengeluaran', { description: errorMessage });
+    } finally {
+      setIsFetching(false);
+    }
+  };
 
   const filteredExpenses = expenses.filter(e => e.description.toLowerCase().includes(searchQuery.toLowerCase()) || (e.category || '').toLowerCase().includes(searchQuery.toLowerCase()));
   const totalExpenses = filteredExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
@@ -36,18 +48,45 @@ export default function Expenses() {
   const openCreateDialog = () => { setEditingExpense(null); setFormDescription(''); setFormAmount(0); setFormCategory(''); setFormDate(new Date().toISOString().split('T')[0]); setIsDialogOpen(true); };
   const openEditDialog = (expense: Expense) => { setEditingExpense(expense); setFormDescription(expense.description); setFormAmount(expense.amount); setFormCategory(expense.category || ''); setFormDate(expense.expense_date); setIsDialogOpen(true); };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formDescription.trim() || formAmount <= 0) { toast.error('Deskripsi dan jumlah wajib diisi'); return; }
     setIsLoading(true);
-    if (editingExpense) { expensesStorage.update(editingExpense.id, { description: formDescription.trim(), amount: formAmount, category: formCategory.trim() || null, expense_date: formDate }); toast.success('Pengeluaran berhasil diperbarui'); }
-    else { expensesStorage.create({ description: formDescription.trim(), amount: formAmount, category: formCategory.trim() || null, expense_date: formDate, created_by: 'local-user-001' }); toast.success('Pengeluaran berhasil ditambahkan'); }
-    setIsDialogOpen(false); fetchExpenses(); setIsLoading(false);
+    try {
+      if (editingExpense) { 
+        await expensesStorage.update(editingExpense.id, { description: formDescription.trim(), amount: formAmount, category: formCategory.trim() || null, expense_date: formDate }); 
+        toast.success('Pengeluaran berhasil diperbarui'); 
+      } else { 
+        await expensesStorage.create({ description: formDescription.trim(), amount: formAmount, category: formCategory.trim() || null, expense_date: formDate, created_by: null }); 
+        toast.success('Pengeluaran berhasil ditambahkan'); 
+      }
+      setIsDialogOpen(false); 
+      await fetchExpenses();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal menyimpan pengeluaran', { description: errorMessage });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDelete = (id: string) => { if (!confirm('Yakin ingin menghapus pengeluaran ini?')) return; expensesStorage.delete(id); toast.success('Pengeluaran berhasil dihapus'); fetchExpenses(); };
+  const handleDelete = async (id: string) => { 
+    if (!confirm('Yakin ingin menghapus pengeluaran ini?')) return; 
+    try {
+      await expensesStorage.delete(id); 
+      toast.success('Pengeluaran berhasil dihapus'); 
+      await fetchExpenses();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal menghapus pengeluaran', { description: errorMessage });
+    }
+  };
 
   const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
   const formatDate = (dateString: string) => new Date(dateString).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  if (isFetching) {
+    return <MainLayout><div className="p-6 flex items-center justify-center min-h-[400px]"><div className="text-center"><div className="w-12 h-12 mx-auto mb-4 rounded-full gradient-bg animate-pulse" /><p className="text-muted-foreground">Memuat pengeluaran...</p></div></div></MainLayout>;
+  }
 
   return (
     <MainLayout>
