@@ -4,8 +4,13 @@ let pool: Pool | null = null;
 
 export const getPool = (): Pool => {
   if (!pool) {
+    // Use NETLIFY_DATABASE_URL (pooled) or NETLIFY_DATABASE_URL_UNPOOLED
+    // NETLIFY_DATABASE_URL = pooled connection (recommended for serverless)
+    // NETLIFY_DATABASE_URL_UNPOOLED = direct connection (for migrations/admin)
+    const connectionString = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;
+    
     pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
+      connectionString,
       ssl: {
         rejectUnauthorized: false
       }
