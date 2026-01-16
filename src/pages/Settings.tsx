@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Store, Save, Upload, Building2, Phone, MapPin, CreditCard, Image, Download, Database } from 'lucide-react';
-import { storeSettingsStorage, dataUtils } from '@/lib/localStorage';
+import { storeSettingsStorage, dataUtils } from '@/lib/supabaseStorage';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,6 @@ import { toast } from 'sonner';
 export default function Settings() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const [storeName, setStoreName] = useState('');
@@ -26,39 +25,50 @@ export default function Settings() {
 
   useEffect(() => { fetchSettings(); }, []);
 
-  const fetchSettings = () => {
+  const fetchSettings = async () => {
     setIsLoading(true);
-    const settings = storeSettingsStorage.get();
-    setStoreName(settings.store_name);
-    setAddress(settings.address || '');
-    setPhone(settings.phone || '');
-    setLogoUrl(settings.logo_url || '');
-    setBankName(settings.bank_name || '');
-    setBankAccountNumber(settings.bank_account_number || '');
-    setBankAccountName(settings.bank_account_name || '');
-    setIsLoading(false);
+    try {
+      const settings = await storeSettingsStorage.get();
+      setStoreName(settings.store_name);
+      setAddress(settings.address || '');
+      setPhone(settings.phone || '');
+      setLogoUrl(settings.logo_url || '');
+      setBankName(settings.bank_name || '');
+      setBankAccountNumber(settings.bank_account_number || '');
+      setBankAccountName(settings.bank_account_name || '');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal memuat pengaturan', { description: errorMessage });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!storeName.trim()) { toast.error('Nama toko wajib diisi'); return; }
     setIsSaving(true);
-    storeSettingsStorage.update({
-      store_name: storeName.trim(),
-      address: address.trim() || null,
-      phone: phone.trim() || null,
-      logo_url: logoUrl.trim() || null,
-      bank_name: bankName.trim() || null,
-      bank_account_number: bankAccountNumber.trim() || null,
-      bank_account_name: bankAccountName.trim() || null,
-    });
-    toast.success('Pengaturan berhasil disimpan');
-    setIsSaving(false);
+    try {
+      await storeSettingsStorage.update({
+        store_name: storeName.trim(),
+        address: address.trim() || null,
+        phone: phone.trim() || null,
+        logo_url: logoUrl.trim() || null,
+        bank_name: bankName.trim() || null,
+        bank_account_number: bankAccountNumber.trim() || null,
+        bank_account_name: bankAccountName.trim() || null,
+      });
+      toast.success('Pengaturan berhasil disimpan');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal menyimpan pengaturan', { description: errorMessage });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  // Export data to JSON
-  const handleExportData = () => {
+  const handleExportData = async () => {
     try {
-      const data = dataUtils.exportAllData();
+      const data = await dataUtils.exportAllData();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -74,41 +84,6 @@ export default function Settings() {
     }
   };
 
-  // Import data from JSON
-  const handleImportData = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = JSON.parse(e.target?.result as string);
-        if (!data.products && !data.customers && !data.transactions) {
-          toast.error('Format file tidak valid');
-          return;
-        }
-        if (!confirm('Ini akan menimpa semua data yang ada. Lanjutkan?')) return;
-        dataUtils.importAllData(data);
-        toast.success('Data berhasil diimpor!');
-        fetchSettings();
-        window.location.reload();
-      } catch (error) {
-        toast.error('Gagal membaca file');
-      }
-    };
-    reader.readAsText(file);
-    if (importInputRef.current) importInputRef.current.value = '';
-  };
-
-  // Clear all data
-  const handleClearData = () => {
-    if (!confirm('PERINGATAN: Ini akan menghapus SEMUA data! Tindakan ini tidak dapat dibatalkan. Lanjutkan?')) return;
-    if (!confirm('Apakah Anda benar-benar yakin? Semua produk, customer, transaksi, dan pengeluaran akan dihapus!')) return;
-    dataUtils.clearAllData();
-    toast.success('Semua data berhasil dihapus');
-    window.location.reload();
-  };
-
   if (isLoading) {
     return <MainLayout><div className="p-6 flex items-center justify-center min-h-[400px]"><div className="text-center"><div className="w-12 h-12 mx-auto mb-4 rounded-full gradient-bg animate-pulse" /><p className="text-muted-foreground">Memuat pengaturan...</p></div></div></MainLayout>;
   }
@@ -121,7 +96,6 @@ export default function Settings() {
           <Button onClick={handleSave} disabled={isSaving} className="gradient-bg text-primary-foreground"><Save className="h-4 w-4 mr-2" />{isSaving ? 'Menyimpan...' : 'Simpan'}</Button>
         </div>
 
-        {/* Store Identity */}
         <Card className="glass-card">
           <CardHeader><CardTitle className="flex items-center gap-2"><Store className="h-5 w-5 text-primary" />Identitas Toko</CardTitle><CardDescription>Informasi dasar toko yang akan tampil di nota</CardDescription></CardHeader>
           <CardContent className="space-y-4">
@@ -138,7 +112,6 @@ export default function Settings() {
           </CardContent>
         </Card>
 
-        {/* Bank Information */}
         <Card className="glass-card">
           <CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5 text-primary" />Informasi Rekening Bank</CardTitle><CardDescription>Detail rekening untuk pembayaran transfer (opsional)</CardDescription></CardHeader>
           <CardContent className="space-y-4">
@@ -152,19 +125,11 @@ export default function Settings() {
 
         <Separator />
 
-        {/* Backup & Restore */}
         <Card className="glass-card border-warning/50">
-          <CardHeader><CardTitle className="flex items-center gap-2"><Database className="h-5 w-5 text-warning" />Backup & Restore Data</CardTitle><CardDescription>Ekspor atau impor data aplikasi dalam format JSON</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Database className="h-5 w-5 text-warning" />Backup Data</CardTitle><CardDescription>Ekspor data aplikasi dalam format JSON</CardDescription></CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Button variant="outline" onClick={handleExportData} className="h-20 flex-col gap-2"><Download className="h-6 w-6" /><span>Ekspor Data (JSON)</span></Button>
-              <div>
-                <input ref={importInputRef} type="file" accept=".json" onChange={handleImportData} className="hidden" />
-                <Button variant="outline" onClick={() => importInputRef.current?.click()} className="w-full h-20 flex-col gap-2"><Upload className="h-6 w-6" /><span>Impor Data (JSON)</span></Button>
-              </div>
-              <Button variant="destructive" onClick={handleClearData} className="h-20 flex-col gap-2"><Database className="h-6 w-6" /><span>Hapus Semua Data</span></Button>
-            </div>
-            <p className="text-sm text-muted-foreground">⚠️ Backup data secara berkala untuk mencegah kehilangan data. File JSON dapat digunakan untuk memindahkan data ke perangkat lain.</p>
+            <Button variant="outline" onClick={handleExportData} className="h-20 flex-col gap-2 w-full md:w-auto"><Download className="h-6 w-6" /><span>Ekspor Data (JSON)</span></Button>
+            <p className="text-sm text-muted-foreground">💾 Data sekarang disimpan ke database cloud Supabase. Ekspor data untuk backup lokal.</p>
           </CardContent>
         </Card>
 

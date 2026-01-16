@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Users, Search, Phone, MapPin, Wallet, History, CreditCard, FileText } from 'lucide-react';
-import { customersStorage, depositLogsStorage, transactionsStorage, paymentsStorage } from '@/lib/localStorage';
+import { Plus, Pencil, Trash2, Users, Search, Phone, MapPin, Wallet, History, CreditCard } from 'lucide-react';
+import { customersStorage, depositLogsStorage, transactionsStorage, paymentsStorage } from '@/lib/supabaseStorage';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { Customer, CustomerType, DepositLog, Transaction, TransactionStatus } from '@/types/database';
 
@@ -22,6 +21,7 @@ export default function Customers() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
   const [formName, setFormName] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
@@ -46,7 +46,18 @@ export default function Customers() {
 
   useEffect(() => { fetchCustomers(); }, []);
 
-  const fetchCustomers = () => setCustomers(customersStorage.getAll());
+  const fetchCustomers = async () => {
+    setIsFetching(true);
+    try {
+      const data = await customersStorage.getAll();
+      setCustomers(data);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal memuat customer', { description: errorMessage });
+    } finally {
+      setIsFetching(false);
+    }
+  };
 
   const filteredCustomers = customers.filter(c => {
     const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || (c.phone || '').includes(searchQuery);
@@ -54,60 +65,169 @@ export default function Customers() {
     return matchesSearch && matchesType;
   });
 
-  const openCreateDialog = () => { setEditingCustomer(null); setFormName(''); setFormPhone(''); setFormAddress(''); setFormType('End User'); setIsDialogOpen(true); };
-  const openEditDialog = (customer: Customer) => { setEditingCustomer(customer); setFormName(customer.name); setFormPhone(customer.phone || ''); setFormAddress(customer.address || ''); setFormType(customer.customer_type); setIsDialogOpen(true); };
-
-  const handleSave = () => {
-    if (!formName.trim()) { toast.error('Nama customer wajib diisi'); return; }
-    setIsLoading(true);
-    if (editingCustomer) { customersStorage.update(editingCustomer.id, { name: formName.trim(), phone: formPhone.trim() || null, address: formAddress.trim() || null, customer_type: formType }); toast.success('Customer berhasil diperbarui'); }
-    else { customersStorage.create({ name: formName.trim(), phone: formPhone.trim() || null, address: formAddress.trim() || null, customer_type: formType, deposit_balance: 0 }); toast.success('Customer berhasil ditambahkan'); }
-    setIsDialogOpen(false); fetchCustomers(); setIsLoading(false);
+  const openCreateDialog = () => { 
+    setEditingCustomer(null); 
+    setFormName(''); 
+    setFormPhone(''); 
+    setFormAddress(''); 
+    setFormType('End User'); 
+    setIsDialogOpen(true); 
+  };
+  
+  const openEditDialog = (customer: Customer) => { 
+    setEditingCustomer(customer); 
+    setFormName(customer.name); 
+    setFormPhone(customer.phone || ''); 
+    setFormAddress(customer.address || ''); 
+    setFormType(customer.customer_type); 
+    setIsDialogOpen(true); 
   };
 
-  const handleDelete = (id: string) => { if (!confirm('Yakin ingin menghapus customer ini?')) return; customersStorage.delete(id); toast.success('Customer berhasil dihapus'); fetchCustomers(); };
+  const handleSave = async () => {
+    if (!formName.trim()) { 
+      toast.error('Nama customer wajib diisi'); 
+      return; 
+    }
+    setIsLoading(true);
+    try {
+      if (editingCustomer) { 
+        await customersStorage.update(editingCustomer.id, { 
+          name: formName.trim(), 
+          phone: formPhone.trim() || null, 
+          address: formAddress.trim() || null, 
+          customer_type: formType 
+        }); 
+        toast.success('Customer berhasil diperbarui'); 
+      } else { 
+        await customersStorage.create({ 
+          name: formName.trim(), 
+          phone: formPhone.trim() || null, 
+          address: formAddress.trim() || null, 
+          customer_type: formType, 
+          deposit_balance: 0 
+        }); 
+        toast.success('Customer berhasil ditambahkan'); 
+      }
+      setIsDialogOpen(false); 
+      await fetchCustomers();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal menyimpan customer', { description: errorMessage });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => { 
+    if (!confirm('Yakin ingin menghapus customer ini?')) return; 
+    try {
+      await customersStorage.delete(id); 
+      toast.success('Customer berhasil dihapus'); 
+      await fetchCustomers();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal menghapus customer', { description: errorMessage });
+    }
+  };
 
   const formatCurrency = (value: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
   const formatDate = (d: string) => new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   // Deposit
-  const openDeposit = (c: Customer) => { setDepositCustomer(c); setDepositAmount(0); setDepositNotes(''); setIsDepositOpen(true); };
-  const handleDeposit = () => {
-    if (!depositCustomer || depositAmount <= 0) { toast.error('Masukkan jumlah deposit yang valid'); return; }
-    depositLogsStorage.create({ customer_id: depositCustomer.id, amount: depositAmount, type: 'deposit', notes: depositNotes || null, created_by: 'local-user-001' });
-    customersStorage.updateBalance(depositCustomer.id, depositAmount);
-    toast.success('Deposit berhasil ditambahkan');
-    setIsDepositOpen(false); fetchCustomers();
+  const openDeposit = (c: Customer) => { 
+    setDepositCustomer(c); 
+    setDepositAmount(0); 
+    setDepositNotes(''); 
+    setIsDepositOpen(true); 
+  };
+  
+  const handleDeposit = async () => {
+    if (!depositCustomer || depositAmount <= 0) { 
+      toast.error('Masukkan jumlah deposit yang valid'); 
+      return; 
+    }
+    try {
+      await depositLogsStorage.create({ 
+        customer_id: depositCustomer.id, 
+        amount: depositAmount, 
+        type: 'deposit', 
+        notes: depositNotes || null, 
+        created_by: null 
+      });
+      await customersStorage.updateBalance(depositCustomer.id, depositAmount);
+      toast.success('Deposit berhasil ditambahkan');
+      setIsDepositOpen(false); 
+      await fetchCustomers();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal menambahkan deposit', { description: errorMessage });
+    }
   };
 
   // History
-  const openHistory = (c: Customer) => { setHistoryCustomer(c); setDepositLogs(depositLogsStorage.getByCustomerId(c.id)); setIsHistoryOpen(true); };
+  const openHistory = async (c: Customer) => { 
+    setHistoryCustomer(c); 
+    try {
+      const logs = await depositLogsStorage.getByCustomerId(c.id);
+      setDepositLogs(logs); 
+    } catch (error) {
+      setDepositLogs([]);
+    }
+    setIsHistoryOpen(true); 
+  };
 
   // Payment
-  const openPayment = (c: Customer) => {
+  const openPayment = async (c: Customer) => {
     setPaymentCustomer(c);
-    const invoices = transactionsStorage.getAll().filter(t => t.customer_id === c.id && t.status !== 'Lunas');
-    setUnpaidInvoices(invoices);
+    try {
+      const allTransactions = await transactionsStorage.getAll();
+      const invoices = allTransactions.filter(t => t.customer_id === c.id && t.status !== 'Lunas');
+      setUnpaidInvoices(invoices);
+    } catch (error) {
+      setUnpaidInvoices([]);
+    }
     setPaymentAmount(0);
     setIsPaymentOpen(true);
   };
 
-  const handlePayment = () => {
-    if (!paymentCustomer || paymentAmount <= 0 || unpaidInvoices.length === 0) { toast.error('Masukkan jumlah pembayaran yang valid'); return; }
-    let remaining = paymentAmount;
-    for (const inv of unpaidInvoices) {
-      if (remaining <= 0) break;
-      const owed = Number(inv.total_price) - Number(inv.amount_paid);
-      const allocated = Math.min(remaining, owed);
-      const newPaid = Number(inv.amount_paid) + allocated;
-      const newStatus: TransactionStatus = newPaid >= Number(inv.total_price) ? 'Lunas' : newPaid > 0 ? 'DP' : 'Piutang';
-      transactionsStorage.update(inv.id, { amount_paid: newPaid, status: newStatus });
-      paymentsStorage.create({ transaction_id: inv.id, amount: allocated, payment_method: 'Cash', notes: 'Mass payment', created_by: 'local-user-001' });
-      remaining -= allocated;
+  const handlePayment = async () => {
+    if (!paymentCustomer || paymentAmount <= 0 || unpaidInvoices.length === 0) { 
+      toast.error('Masukkan jumlah pembayaran yang valid'); 
+      return; 
     }
-    toast.success('Pembayaran berhasil dialokasikan');
-    setIsPaymentOpen(false); fetchCustomers();
+    try {
+      let remaining = paymentAmount;
+      for (const inv of unpaidInvoices) {
+        if (remaining <= 0) break;
+        const owed = Number(inv.total_price) - Number(inv.amount_paid);
+        const allocated = Math.min(remaining, owed);
+        const newPaid = Number(inv.amount_paid) + allocated;
+        const newStatus: TransactionStatus = newPaid >= Number(inv.total_price) ? 'Lunas' : newPaid > 0 ? 'DP' : 'Piutang';
+        await transactionsStorage.update(inv.id, { amount_paid: newPaid, status: newStatus });
+        await paymentsStorage.create({ transaction_id: inv.id, amount: allocated, payment_method: 'Cash', notes: 'Mass payment', created_by: null });
+        remaining -= allocated;
+      }
+      toast.success('Pembayaran berhasil dialokasikan');
+      setIsPaymentOpen(false); 
+      await fetchCustomers();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal memproses pembayaran', { description: errorMessage });
+    }
   };
+
+  if (isFetching) {
+    return (
+      <MainLayout>
+        <div className="p-6 flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-full gradient-bg animate-pulse" />
+            <p className="text-muted-foreground">Memuat customer...</p>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
