@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Package, Search } from 'lucide-react';
-import { productsStorage } from '@/lib/supabaseStorage';
+import { productsStorage } from '@/lib/localStorage';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,7 +24,6 @@ export default function Products() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isFetching, setIsFetching] = useState(true);
 
   // Form state
   const [formName, setFormName] = useState('');
@@ -39,17 +38,9 @@ export default function Products() {
     fetchProducts();
   }, []);
 
-  const fetchProducts = async () => {
-    setIsFetching(true);
-    try {
-      const data = await productsStorage.getAll();
-      setProducts(data);
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
-      toast.error('Gagal memuat produk', { description: errorMessage });
-    } finally {
-      setIsFetching(false);
-    }
+  const fetchProducts = () => {
+    const data = productsStorage.getAll();
+    setProducts(data);
   };
 
   const filteredProducts = products.filter((product) => {
@@ -82,7 +73,7 @@ export default function Products() {
     setIsDialogOpen(true);
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!formName.trim()) {
       toast.error('Nama produk wajib diisi');
       return;
@@ -102,14 +93,14 @@ export default function Products() {
       };
 
       if (editingProduct) {
-        await productsStorage.update(editingProduct.id, productData);
+        productsStorage.update(editingProduct.id, productData);
         toast.success('Produk berhasil diperbarui');
       } else {
-        await productsStorage.create(productData);
+        productsStorage.create(productData);
         toast.success('Produk berhasil ditambahkan');
       }
 
-      await fetchProducts();
+      fetchProducts();
       setIsDialogOpen(false);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
@@ -119,13 +110,13 @@ export default function Products() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (!confirm('Yakin ingin menghapus produk ini?')) return;
 
     try {
-      await productsStorage.delete(id);
+      productsStorage.delete(id);
       toast.success('Produk berhasil dihapus');
-      await fetchProducts();
+      fetchProducts();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
       toast.error('Gagal menghapus produk', { description: errorMessage });
@@ -139,19 +130,6 @@ export default function Products() {
       minimumFractionDigits: 0,
     }).format(amount);
   };
-
-  if (isFetching) {
-    return (
-      <MainLayout>
-        <div className="p-6 flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="w-12 h-12 mx-auto mb-4 rounded-full gradient-bg animate-pulse" />
-            <p className="text-muted-foreground">Memuat produk...</p>
-          </div>
-        </div>
-      </MainLayout>
-    );
-  }
 
   return (
     <MainLayout>
