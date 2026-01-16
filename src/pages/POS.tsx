@@ -109,19 +109,30 @@ export default function POS() {
     fetchProducts();
   }, []);
 
-  const fetchProducts = () => {
-    const data = productsStorage.getAll().filter(p => p.is_active);
-    setProducts(data);
+  const fetchProducts = async () => {
+    try {
+      const data = await productsApi.getAll();
+      setProducts(data.filter((p: Product) => p.is_active));
+    } catch (error) {
+      console.error('Failed to fetch products:', error);
+    }
   };
 
   // Customer search effect
   useEffect(() => {
-    if (customerSearchQuery.trim()) {
-      const results = customersStorage.search(customerSearchQuery);
-      setCustomerSearchResults(results);
-    } else {
-      setCustomerSearchResults([]);
-    }
+    const searchCustomers = async () => {
+      if (customerSearchQuery.trim()) {
+        try {
+          const results = await customersApi.search(customerSearchQuery);
+          setCustomerSearchResults(results);
+        } catch {
+          setCustomerSearchResults([]);
+        }
+      } else {
+        setCustomerSearchResults([]);
+      }
+    };
+    searchCustomers();
   }, [customerSearchQuery]);
 
   const filteredProducts = useMemo(() => {
@@ -311,7 +322,7 @@ export default function POS() {
     return 'Piutang';
   }, [amountPaid, cartTotal]);
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cart.length === 0) {
       toast.error('Keranjang kosong');
       return;
@@ -321,7 +332,7 @@ export default function POS() {
 
     try {
       // Create transaction
-      const transaction = transactionsStorage.create({
+      const transaction = await transactionsApi.create({
         customer_id: selectedCustomer?.id || null,
         customer_name: customerName || null,
         customer_type: customerType,
@@ -333,24 +344,24 @@ export default function POS() {
       });
 
       // Create transaction items
-      const items = cart.map((item) => ({
-        transaction_id: transaction.id,
-        product_id: item.type === 'product' ? item.product_id || null : null,
-        custom_name: item.type === 'custom' ? item.custom_name || null : null,
-        file_name: item.file_name || null,
-        length: item.length || null,
-        width: item.width || null,
-        real_width: item.real_width || null,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        subtotal: item.subtotal,
-      }));
-
-      transactionItemsStorage.createMany(items);
+      for (const item of cart) {
+        await transactionItemsApi.create({
+          transaction_id: transaction.id,
+          product_id: item.type === 'product' ? item.product_id || null : null,
+          custom_name: item.type === 'custom' ? item.custom_name || null : null,
+          file_name: item.file_name || null,
+          length: item.length || null,
+          width: item.width || null,
+          real_width: item.real_width || null,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          subtotal: item.subtotal,
+        });
+      }
 
       // Create initial payment if amount paid > 0
       if (amountPaid > 0) {
-        paymentsStorage.create({
+        await paymentsApi.create({
           transaction_id: transaction.id,
           amount: amountPaid,
           payment_method: 'Cash',
@@ -419,10 +430,18 @@ export default function POS() {
 
   // Fetch store settings when success modal opens
   useEffect(() => {
-    if (isSuccessOpen && !storeSettings) {
-      setStoreSettings(storeSettingsStorage.get());
-    }
-  }, [isSuccessOpen]);
+    const fetchStoreSettings = async () => {
+      if (isSuccessOpen && !storeSettings) {
+        try {
+          const settings = await storeSettingsApi.get();
+          setStoreSettings(settings);
+        } catch {
+          console.error('Failed to fetch store settings');
+        }
+      }
+    };
+    fetchStoreSettings();
+  }, [isSuccessOpen, storeSettings]);
 
   const handleDownloadA5 = () => {
     toast.info('Fitur download PDF tidak tersedia dalam mode offline');
