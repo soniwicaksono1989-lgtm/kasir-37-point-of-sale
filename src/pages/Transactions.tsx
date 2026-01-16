@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Receipt, Search, CreditCard, Eye, Printer, FileText, Trash2 } from 'lucide-react';
 import { 
-  transactionsStorage, 
-  transactionItemsStorage,
-  paymentsStorage,
-  productsStorage,
-} from '@/lib/localStorage';
+  transactionsApi, 
+  transactionItemsApi,
+  paymentsApi,
+  productsApi,
+} from '@/lib/neonApi';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,27 +33,44 @@ export default function Transactions() {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
 
   useEffect(() => {
     fetchTransactions();
   }, []);
 
-  const fetchTransactions = () => {
-    const data = transactionsStorage.getAll();
-    setTransactions(data);
+  const fetchTransactions = async () => {
+    setIsFetching(true);
+    try {
+      const data = await transactionsApi.getAll();
+      setTransactions(data);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal memuat transaksi', { description: errorMessage });
+    } finally {
+      setIsFetching(false);
+    }
   };
 
-  const fetchTransactionItems = (transactionId: string) => {
-    const items = transactionItemsStorage.getByTransactionId(transactionId);
-    // Attach product data
-    const itemsWithProducts = items.map(item => {
-      if (item.product_id) {
-        const product = productsStorage.getById(item.product_id);
-        return { ...item, product };
-      }
-      return item;
-    });
-    setTransactionItems(itemsWithProducts);
+  const fetchTransactionItems = async (transactionId: string) => {
+    try {
+      const items = await transactionItemsApi.getByTransactionId(transactionId);
+      // Attach product data
+      const itemsWithProducts = await Promise.all(items.map(async (item: TransactionItem) => {
+        if (item.product_id) {
+          try {
+            const product = await productsApi.getById(item.product_id);
+            return { ...item, product };
+          } catch {
+            return item;
+          }
+        }
+        return item;
+      }));
+      setTransactionItems(itemsWithProducts);
+    } catch {
+      setTransactionItems([]);
+    }
   };
 
   const filteredTransactions = transactions.filter((transaction) => {
@@ -76,7 +93,7 @@ export default function Transactions() {
     setIsPaymentOpen(true);
   };
 
-  const handlePayment = () => {
+  const handlePayment = async () => {
     if (!selectedTransaction || paymentAmount <= 0) {
       toast.error('Masukkan jumlah pembayaran yang valid');
       return;
@@ -86,7 +103,7 @@ export default function Transactions() {
 
     try {
       // Create payment record
-      paymentsStorage.create({
+      await paymentsApi.create({
         transaction_id: selectedTransaction.id,
         amount: paymentAmount,
         payment_method: 'Cash',
@@ -107,7 +124,7 @@ export default function Transactions() {
       }
 
       // Update transaction
-      transactionsStorage.update(selectedTransaction.id, {
+      await transactionsApi.update(selectedTransaction.id, {
         amount_paid: newAmountPaid,
         status: newStatus,
       });
@@ -150,27 +167,14 @@ export default function Transactions() {
     setIsDeleteOpen(true);
   };
 
-  const handleDeleteTransaction = () => {
+  const handleDeleteTransaction = async () => {
     if (!transactionToDelete) return;
 
     setIsDeleting(true);
 
     try {
-      // Restore stock for transaction items
-      const items = transactionItemsStorage.getByTransactionId(transactionToDelete.id);
-      items.forEach(item => {
-        if (item.product_id) {
-          const product = productsStorage.getById(item.product_id);
-          if (product && (product.category === 'Stok' || ['pcs', 'lembar', 'box'].includes(product.unit))) {
-            productsStorage.update(item.product_id, {
-              stock: product.stock + item.quantity
-            });
-          }
-        }
-      });
-
-      // Delete transaction (also deletes items and payments)
-      transactionsStorage.delete(transactionToDelete.id);
+      // Delete transaction (backend should handle cleanup)
+      await transactionsApi.delete(transactionToDelete.id);
 
       toast.success(`Transaksi ${transactionToDelete.invoice_number} berhasil dihapus`);
       fetchTransactions();
@@ -230,99 +234,103 @@ export default function Transactions() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Tipe</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Dibayar</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Tanggal</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTransactions.length === 0 ? (
+            {isFetching ? (
+              <div className="text-center py-8 text-muted-foreground">Memuat data...</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                        Tidak ada transaksi ditemukan
-                      </TableCell>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Tipe</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="text-right">Dibayar</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Tanggal</TableHead>
+                      <TableHead className="text-right">Aksi</TableHead>
                     </TableRow>
-                  ) : (
-                    filteredTransactions.map((transaction) => (
-                      <TableRow key={transaction.id}>
-                        <TableCell className="font-medium font-mono">
-                          {transaction.invoice_number}
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTransactions.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                          Tidak ada transaksi ditemukan
                         </TableCell>
-                        <TableCell>
-                          {transaction.customer_name || 'Walk-in'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{transaction.customer_type}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-mono-numbers">
-                          {formatCurrency(transaction.total_price)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono-numbers">
-                          {formatCurrency(transaction.amount_paid)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            className={
-                              transaction.status === 'Lunas'
-                                ? 'status-lunas'
-                                : transaction.status === 'DP'
-                                ? 'status-dp'
-                                : 'status-piutang'
-                            }
-                          >
-                            {transaction.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatDate(transaction.created_at)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => openDetail(transaction)}
-                              title="Lihat Detail"
+                      </TableRow>
+                    ) : (
+                      filteredTransactions.map((transaction) => (
+                        <TableRow key={transaction.id}>
+                          <TableCell className="font-medium font-mono">
+                            {transaction.invoice_number}
+                          </TableCell>
+                          <TableCell>
+                            {transaction.customer_name || 'Walk-in'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{transaction.customer_type}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono-numbers">
+                            {formatCurrency(transaction.total_price)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono-numbers">
+                            {formatCurrency(transaction.amount_paid)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className={
+                                transaction.status === 'Lunas'
+                                  ? 'status-lunas'
+                                  : transaction.status === 'DP'
+                                  ? 'status-dp'
+                                  : 'status-piutang'
+                              }
                             >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            {transaction.status !== 'Lunas' && (
+                              {transaction.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {formatDate(transaction.created_at)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
                               <Button
                                 size="icon"
                                 variant="ghost"
-                                className="text-success hover:text-success"
-                                onClick={() => openPayment(transaction)}
-                                title="Bayar"
+                                onClick={() => openDetail(transaction)}
+                                title="Lihat Detail"
                               >
-                                <CreditCard className="h-4 w-4" />
+                                <Eye className="h-4 w-4" />
                               </Button>
-                            )}
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => openDeleteConfirm(transaction)}
-                              title="Hapus Transaksi"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                              {transaction.status !== 'Lunas' && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="text-success hover:text-success"
+                                  onClick={() => openPayment(transaction)}
+                                  title="Bayar"
+                                >
+                                  <CreditCard className="h-4 w-4" />
+                                </Button>
+                              )}
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => openDeleteConfirm(transaction)}
+                                title="Hapus Transaksi"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -410,7 +418,7 @@ export default function Transactions() {
                     variant="outline"
                     className="flex-1"
                     onClick={() => {
-                      toast.info('Fitur cetak tidak tersedia dalam mode offline');
+                      toast.info('Fitur cetak tersedia setelah deploy ke Netlify');
                     }}
                   >
                     <FileText className="h-4 w-4 mr-2" />
@@ -420,7 +428,7 @@ export default function Transactions() {
                     variant="outline"
                     className="flex-1"
                     onClick={() => {
-                      toast.info('Fitur cetak tidak tersedia dalam mode offline');
+                      toast.info('Fitur cetak tersedia setelah deploy ke Netlify');
                     }}
                   >
                     <Printer className="h-4 w-4 mr-2" />
@@ -436,30 +444,26 @@ export default function Transactions() {
         <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Pelunasan Piutang</DialogTitle>
+              <DialogTitle>Pembayaran Cicilan</DialogTitle>
             </DialogHeader>
             {selectedTransaction && (
               <div className="space-y-4 py-4">
-                <div className="p-4 rounded-lg bg-secondary/30 space-y-2">
+                <div className="p-4 rounded-lg bg-secondary/50 space-y-2">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Invoice</span>
-                    <span className="font-mono">{selectedTransaction.invoice_number}</span>
+                    <span className="font-mono font-medium">{selectedTransaction.invoice_number}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Total</span>
-                    <span className="font-mono-numbers">
-                      {formatCurrency(selectedTransaction.total_price)}
-                    </span>
+                    <span className="font-mono-numbers">{formatCurrency(selectedTransaction.total_price)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Sudah Dibayar</span>
-                    <span className="font-mono-numbers">
-                      {formatCurrency(selectedTransaction.amount_paid)}
-                    </span>
+                    <span className="font-mono-numbers text-success">{formatCurrency(selectedTransaction.amount_paid)}</span>
                   </div>
-                  <div className="flex justify-between text-destructive font-semibold">
-                    <span>Sisa</span>
-                    <span className="font-mono-numbers">
+                  <div className="flex justify-between pt-2 border-t border-border">
+                    <span className="font-medium">Sisa</span>
+                    <span className="font-mono-numbers font-bold text-destructive">
                       {formatCurrency(getRemainingAmount(selectedTransaction))}
                     </span>
                   </div>
@@ -472,7 +476,7 @@ export default function Transactions() {
                     placeholder="0"
                     value={paymentAmount || ''}
                     onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                    className="font-mono-numbers text-lg"
+                    className="font-mono-numbers"
                   />
                 </div>
               </div>
@@ -496,27 +500,10 @@ export default function Transactions() {
         <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle className="text-destructive">
-                Hapus Transaksi
-              </AlertDialogTitle>
-              <AlertDialogDescription className="space-y-2">
-                <p>
-                  Apakah Anda yakin ingin menghapus transaksi{' '}
-                  <span className="font-mono font-semibold text-foreground">
-                    {transactionToDelete?.invoice_number}
-                  </span>
-                  ?
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Tindakan ini akan:
-                </p>
-                <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
-                  <li>Mengembalikan stok produk yang terjual</li>
-                  <li>Menghapus riwayat pembayaran secara permanen</li>
-                </ul>
-                <p className="text-sm font-medium text-destructive mt-2">
-                  Tindakan ini tidak dapat dibatalkan!
-                </p>
+              <AlertDialogTitle>Hapus Transaksi?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Anda akan menghapus transaksi <strong>{transactionToDelete?.invoice_number}</strong>. 
+                Tindakan ini tidak dapat dibatalkan.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

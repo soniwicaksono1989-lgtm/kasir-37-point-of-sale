@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Package, Search } from 'lucide-react';
-import { productsStorage } from '@/lib/localStorage';
+import { productsApi } from '@/lib/neonApi';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,7 @@ export default function Products() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
 
   // Form state
   const [formName, setFormName] = useState('');
@@ -38,9 +39,17 @@ export default function Products() {
     fetchProducts();
   }, []);
 
-  const fetchProducts = () => {
-    const data = productsStorage.getAll();
-    setProducts(data);
+  const fetchProducts = async () => {
+    setIsFetching(true);
+    try {
+      const data = await productsApi.getAll();
+      setProducts(data);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal memuat produk', { description: errorMessage });
+    } finally {
+      setIsFetching(false);
+    }
   };
 
   const filteredProducts = products.filter((product) => {
@@ -73,7 +82,7 @@ export default function Products() {
     setIsDialogOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formName.trim()) {
       toast.error('Nama produk wajib diisi');
       return;
@@ -93,10 +102,10 @@ export default function Products() {
       };
 
       if (editingProduct) {
-        productsStorage.update(editingProduct.id, productData);
+        await productsApi.update(editingProduct.id, productData);
         toast.success('Produk berhasil diperbarui');
       } else {
-        productsStorage.create(productData);
+        await productsApi.create(productData);
         toast.success('Produk berhasil ditambahkan');
       }
 
@@ -110,11 +119,11 @@ export default function Products() {
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Yakin ingin menghapus produk ini?')) return;
 
     try {
-      productsStorage.delete(id);
+      await productsApi.delete(id);
       toast.success('Produk berhasil dihapus');
       fetchProducts();
     } catch (error: unknown) {
@@ -183,72 +192,76 @@ export default function Products() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nama Produk</TableHead>
-                    <TableHead>Kategori</TableHead>
-                    <TableHead className="text-right">Harga Reseller</TableHead>
-                    <TableHead className="text-right">Harga End User</TableHead>
-                    <TableHead className="text-right">Stok</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredProducts.length === 0 ? (
+            {isFetching ? (
+              <div className="text-center py-8 text-muted-foreground">Memuat data...</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                        Tidak ada produk ditemukan
-                      </TableCell>
+                      <TableHead>Nama Produk</TableHead>
+                      <TableHead>Kategori</TableHead>
+                      <TableHead className="text-right">Harga Reseller</TableHead>
+                      <TableHead className="text-right">Harga End User</TableHead>
+                      <TableHead className="text-right">Stok</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Aksi</TableHead>
                     </TableRow>
-                  ) : (
-                    filteredProducts.map((product) => (
-                      <TableRow key={product.id}>
-                        <TableCell className="font-medium">{product.name}</TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">{product.category}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-mono-numbers">
-                          {formatCurrency(product.price_reseller)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono-numbers">
-                          {formatCurrency(product.price_end_user)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {product.stock} {product.unit}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={product.is_active ? 'default' : 'outline'}>
-                            {product.is_active ? 'Aktif' : 'Nonaktif'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => openEditDialog(product)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => handleDelete(product.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredProducts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                          Tidak ada produk ditemukan
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    ) : (
+                      filteredProducts.map((product) => (
+                        <TableRow key={product.id}>
+                          <TableCell className="font-medium">{product.name}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{product.category}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono-numbers">
+                            {formatCurrency(product.price_reseller)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono-numbers">
+                            {formatCurrency(product.price_end_user)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {product.stock} {product.unit}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={product.is_active ? 'default' : 'outline'}>
+                              {product.is_active ? 'Aktif' : 'Nonaktif'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => openEditDialog(product)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => handleDelete(product.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
