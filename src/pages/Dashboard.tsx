@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  DollarSign, 
-  ShoppingCart, 
+import { useState, useEffect } from 'react';
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  ShoppingCart,
+  Users,
   AlertCircle,
   Calendar,
   RefreshCw
 } from 'lucide-react';
-import { transactionsStorage, expensesStorage } from '@/lib/localStorage';
+import { transactionsApi, expensesApi } from '@/lib/neonApi';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -23,19 +23,19 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import { toast } from 'sonner';
+import { Transaction } from '@/types/database';
 
 interface DashboardStats {
   totalRevenue: number;
   totalExpenses: number;
   totalPiutang: number;
-  totalTransactions: number;
-  revenueChange: number;
+  transactionCount: number;
 }
 
 interface ChartData {
   date: string;
   revenue: number;
-  expenses: number;
 }
 
 export default function Dashboard() {
@@ -43,167 +43,270 @@ export default function Dashboard() {
     totalRevenue: 0,
     totalExpenses: 0,
     totalPiutang: 0,
-    totalTransactions: 0,
-    revenueChange: 0,
+    transactionCount: 0,
   });
   const [chartData, setChartData] = useState<ChartData[]>([]);
-  const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => { fetchDashboardData(); }, []);
-
-  const handleManualRefresh = () => {
-    setIsRefreshing(true);
+  useEffect(() => {
     fetchDashboardData();
-    setIsRefreshing(false);
-    toast.success('Data berhasil diperbarui');
-  };
+  }, []);
 
-  const fetchDashboardData = () => {
+  const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
+      // Get current month data
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
 
-      const allTransactions = transactionsStorage.getAll();
-      const transactions = allTransactions.filter(t => 
-        t.created_at >= startOfMonth && t.created_at <= endOfMonth
-      );
+      const [allTransactions, allExpenses] = await Promise.all([
+        transactionsApi.getAll(),
+        expensesApi.getAll(),
+      ]);
 
-      const allExpenses = expensesStorage.getAll();
-      const startDate = startOfMonth.split('T')[0];
-      const endDate = endOfMonth.split('T')[0];
-      const expenses = allExpenses.filter(e => 
-        e.expense_date >= startDate && e.expense_date <= endDate
-      );
-
-      const totalRevenue = transactions.reduce((sum, t) => sum + Number(t.amount_paid), 0);
-      const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
-      const totalPiutang = transactions
-        .filter(t => t.status !== 'Lunas')
-        .reduce((sum, t) => sum + (Number(t.total_price) - Number(t.amount_paid)), 0);
-      const totalTransactions = transactions.length;
-
-      setStats({ totalRevenue, totalExpenses, totalPiutang, totalTransactions, revenueChange: 0 });
-
-      // Chart data for last 7 days
-      const last7Days = Array.from({ length: 7 }, (_, i) => {
-        const date = new Date();
-        date.setDate(date.getDate() - (6 - i));
-        return date.toISOString().split('T')[0];
+      // Filter for current month
+      const monthTransactions = allTransactions.filter((t: Transaction) => {
+        const date = t.created_at.split('T')[0];
+        return date >= startOfMonth && date <= endOfMonth;
       });
 
-      const chartDataMap = last7Days.map(date => {
-        const dayTransactions = allTransactions.filter(t => t.created_at.split('T')[0] === date);
-        const dayExpenses = allExpenses.filter(e => e.expense_date === date);
-        return {
-          date: new Date(date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' }),
-          revenue: dayTransactions.reduce((sum, t) => sum + Number(t.amount_paid), 0),
-          expenses: dayExpenses.reduce((sum, e) => sum + Number(e.amount), 0),
-        };
+      const monthExpenses = allExpenses.filter((e: { expense_date: string }) => {
+        return e.expense_date >= startOfMonth && e.expense_date <= endOfMonth;
       });
-      setChartData(chartDataMap);
+
+      // Calculate stats
+      const totalRevenue = monthTransactions.reduce((sum: number, t: Transaction) => sum + Number(t.amount_paid), 0);
+      const totalExpenses = monthExpenses.reduce((sum: number, e: { amount: number }) => sum + Number(e.amount), 0);
+      const totalPiutang = monthTransactions
+        .filter((t: Transaction) => t.status !== 'Lunas')
+        .reduce((sum: number, t: Transaction) => sum + (Number(t.total_price) - Number(t.amount_paid)), 0);
+
+      setStats({
+        totalRevenue,
+        totalExpenses,
+        totalPiutang,
+        transactionCount: monthTransactions.length,
+      });
+
+      // Recent transactions
       setRecentTransactions(allTransactions.slice(0, 5));
+
+      // Chart data - last 7 days
+      const last7Days: ChartData[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        const dayRevenue = allTransactions
+          .filter((t: Transaction) => t.created_at.split('T')[0] === dateStr)
+          .reduce((sum: number, t: Transaction) => sum + Number(t.amount_paid), 0);
+        last7Days.push({
+          date: date.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric' }),
+          revenue: dayRevenue,
+        });
+      }
+      setChartData(last7Days);
+
     } catch (error) {
-      console.error('Dashboard data error:', error);
+      console.error('Dashboard fetch error:', error);
+      toast.error('Gagal memuat data dashboard');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchDashboardData();
+    setIsRefreshing(false);
+    toast.success('Data berhasil diperbarui');
+  };
 
-  const statCards = [
-    { title: 'Pendapatan Bulan Ini', value: stats.totalRevenue, icon: DollarSign, color: 'text-success', bgColor: 'bg-success/10' },
-    { title: 'Pengeluaran', value: stats.totalExpenses, icon: TrendingDown, color: 'text-destructive', bgColor: 'bg-destructive/10' },
-    { title: 'Total Piutang', value: stats.totalPiutang, icon: AlertCircle, color: 'text-warning', bgColor: 'bg-warning/10' },
-    { title: 'Total Transaksi', value: stats.totalTransactions, icon: ShoppingCart, color: 'text-info', bgColor: 'bg-info/10', isCurrency: false },
-  ];
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <MainLayout>
+        <div className="p-6 flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="w-12 h-12 mx-auto mb-4 rounded-full gradient-bg animate-pulse" />
+            <p className="text-muted-foreground">Memuat dashboard...</p>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
       <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-            <p className="text-muted-foreground">Ringkasan bisnis Anda hari ini</p>
+            <p className="text-muted-foreground">Ringkasan bisnis bulan ini</p>
           </div>
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" onClick={handleManualRefresh} disabled={isRefreshing}>
-              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />Refresh
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              Refresh
             </Button>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Calendar className="h-4 w-4" />
-              {new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-            </div>
+            <Badge variant="outline" className="gap-1">
+              <Calendar className="h-3 w-3" />
+              {new Date().toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
+            </Badge>
           </div>
         </div>
 
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {statCards.map((card, index) => (
-            <Card key={index} className="glass-card card-hover">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">{card.title}</p>
-                    <p className={`text-lg sm:text-xl font-bold font-mono-numbers ${card.color} truncate`}>
-                      {card.isCurrency === false ? card.value : formatCurrency(card.value)}
-                    </p>
-                  </div>
-                  <div className={`p-3 rounded-xl ${card.bgColor}`}>
-                    <card.icon className={`h-6 w-6 ${card.color}`} />
-                  </div>
+          <Card className="glass-card">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Pendapatan</p>
+                  <p className="text-2xl font-bold text-success font-mono-numbers">
+                    {formatCurrency(stats.totalRevenue)}
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="glass-card lg:col-span-2">
-            <CardHeader><CardTitle className="text-lg">Trend Pendapatan (7 Hari Terakhir)</CardTitle></CardHeader>
-            <CardContent>
-              <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
-                    <defs><linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} /></linearGradient></defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} />
-                    <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} formatter={(value: number) => [formatCurrency(value), 'Pendapatan']} />
-                    <Area type="monotone" dataKey="revenue" stroke="hsl(var(--primary))" fillOpacity={1} fill="url(#colorRevenue)" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <div className="w-12 h-12 rounded-full bg-success/20 flex items-center justify-center">
+                  <TrendingUp className="h-6 w-6 text-success" />
+                </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className="glass-card">
-            <CardHeader><CardTitle className="text-lg">Transaksi Terbaru</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {recentTransactions.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">Belum ada transaksi</p>
-                ) : (
-                  recentTransactions.map((transaction) => (
-                    <div key={transaction.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/30">
-                      <div>
-                        <p className="font-medium text-sm text-foreground">{transaction.invoice_number}</p>
-                        <p className="text-xs text-muted-foreground">{transaction.customer_name || 'Walk-in Customer'}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-sm font-mono-numbers text-primary">{formatCurrency(transaction.total_price)}</p>
-                        <Badge variant="outline" className={transaction.status === 'Lunas' ? 'status-lunas' : transaction.status === 'DP' ? 'status-dp' : 'status-piutang'}>{transaction.status}</Badge>
-                      </div>
-                    </div>
-                  ))
-                )}
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Pengeluaran</p>
+                  <p className="text-2xl font-bold text-destructive font-mono-numbers">
+                    {formatCurrency(stats.totalExpenses)}
+                  </p>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-destructive/20 flex items-center justify-center">
+                  <TrendingDown className="h-6 w-6 text-destructive" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-card">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Piutang</p>
+                  <p className="text-2xl font-bold text-warning font-mono-numbers">
+                    {formatCurrency(stats.totalPiutang)}
+                  </p>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-warning/20 flex items-center justify-center">
+                  <AlertCircle className="h-6 w-6 text-warning" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-card">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Transaksi</p>
+                  <p className="text-2xl font-bold text-primary font-mono-numbers">
+                    {stats.transactionCount}
+                  </p>
+                </div>
+                <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                  <ShoppingCart className="h-6 w-6 text-primary" />
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
+
+        {/* Chart */}
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle>Tren Pendapatan (7 Hari Terakhir)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis dataKey="date" className="text-xs" />
+                  <YAxis className="text-xs" tickFormatter={(v) => `${(v / 1000000).toFixed(1)}jt`} />
+                  <Tooltip
+                    formatter={(value: number) => [formatCurrency(value), 'Pendapatan']}
+                    contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="hsl(var(--primary))"
+                    fill="hsl(var(--primary) / 0.2)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Recent Transactions */}
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle>Transaksi Terbaru</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentTransactions.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">Belum ada transaksi</p>
+            ) : (
+              <div className="space-y-3">
+                {recentTransactions.map((tx) => (
+                  <div key={tx.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/30">
+                    <div>
+                      <p className="font-mono text-sm">{tx.invoice_number}</p>
+                      <p className="text-xs text-muted-foreground">{tx.customer_name || 'Walk-in'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono-numbers font-semibold">{formatCurrency(tx.total_price)}</p>
+                      <Badge className={
+                        tx.status === 'Lunas' ? 'status-lunas' :
+                        tx.status === 'DP' ? 'status-dp' : 'status-piutang'
+                      }>
+                        {tx.status}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </MainLayout>
   );

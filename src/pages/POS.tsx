@@ -17,14 +17,14 @@ import {
   Loader2
 } from 'lucide-react';
 import { 
-  productsStorage, 
-  customersStorage, 
-  transactionsStorage, 
-  transactionItemsStorage,
-  paymentsStorage,
-  storeSettingsStorage,
-  StoreSettings
-} from '@/lib/localStorage';
+  productsApi, 
+  customersApi, 
+  transactionsApi, 
+  transactionItemsApi,
+  paymentsApi,
+  storeSettingsApi,
+} from '@/lib/neonApi';
+import { StoreSettings } from '@/lib/localStorage';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

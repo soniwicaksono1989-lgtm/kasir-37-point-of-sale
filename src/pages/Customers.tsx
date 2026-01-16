@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Users, Search, Phone, MapPin, Wallet, History, CreditCard, FileText } from 'lucide-react';
-import { customersStorage, depositLogsStorage, transactionsStorage, paymentsStorage } from '@/lib/localStorage';
+import { Plus, Pencil, Trash2, Users, Search, Phone, MapPin, Wallet, History, CreditCard } from 'lucide-react';
+import { customersApi, depositLogsApi, transactionsApi, paymentsApi } from '@/lib/neonApi';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 import { Customer, CustomerType, DepositLog, Transaction, TransactionStatus } from '@/types/database';
 
@@ -22,6 +21,7 @@ export default function Customers() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(true);
   const [formName, setFormName] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
@@ -46,7 +46,18 @@ export default function Customers() {
 
   useEffect(() => { fetchCustomers(); }, []);
 
-  const fetchCustomers = () => setCustomers(customersStorage.getAll());
+  const fetchCustomers = async () => {
+    setIsFetching(true);
+    try {
+      const data = await customersApi.getAll();
+      setCustomers(data);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal memuat customer', { description: errorMessage });
+    } finally {
+      setIsFetching(false);
+    }
+  };
 
   const filteredCustomers = customers.filter(c => {
     const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || (c.phone || '').includes(searchQuery);
@@ -57,56 +68,105 @@ export default function Customers() {
   const openCreateDialog = () => { setEditingCustomer(null); setFormName(''); setFormPhone(''); setFormAddress(''); setFormType('End User'); setIsDialogOpen(true); };
   const openEditDialog = (customer: Customer) => { setEditingCustomer(customer); setFormName(customer.name); setFormPhone(customer.phone || ''); setFormAddress(customer.address || ''); setFormType(customer.customer_type); setIsDialogOpen(true); };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formName.trim()) { toast.error('Nama customer wajib diisi'); return; }
     setIsLoading(true);
-    if (editingCustomer) { customersStorage.update(editingCustomer.id, { name: formName.trim(), phone: formPhone.trim() || null, address: formAddress.trim() || null, customer_type: formType }); toast.success('Customer berhasil diperbarui'); }
-    else { customersStorage.create({ name: formName.trim(), phone: formPhone.trim() || null, address: formAddress.trim() || null, customer_type: formType, deposit_balance: 0 }); toast.success('Customer berhasil ditambahkan'); }
-    setIsDialogOpen(false); fetchCustomers(); setIsLoading(false);
+    try {
+      if (editingCustomer) {
+        await customersApi.update(editingCustomer.id, { name: formName.trim(), phone: formPhone.trim() || null, address: formAddress.trim() || null, customer_type: formType });
+        toast.success('Customer berhasil diperbarui');
+      } else {
+        await customersApi.create({ name: formName.trim(), phone: formPhone.trim() || null, address: formAddress.trim() || null, customer_type: formType, deposit_balance: 0 });
+        toast.success('Customer berhasil ditambahkan');
+      }
+      setIsDialogOpen(false);
+      fetchCustomers();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal menyimpan customer', { description: errorMessage });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDelete = (id: string) => { if (!confirm('Yakin ingin menghapus customer ini?')) return; customersStorage.delete(id); toast.success('Customer berhasil dihapus'); fetchCustomers(); };
+  const handleDelete = async (id: string) => {
+    if (!confirm('Yakin ingin menghapus customer ini?')) return;
+    try {
+      await customersApi.delete(id);
+      toast.success('Customer berhasil dihapus');
+      fetchCustomers();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal menghapus customer', { description: errorMessage });
+    }
+  };
 
   const formatCurrency = (value: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
   const formatDate = (d: string) => new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   // Deposit
   const openDeposit = (c: Customer) => { setDepositCustomer(c); setDepositAmount(0); setDepositNotes(''); setIsDepositOpen(true); };
-  const handleDeposit = () => {
+  const handleDeposit = async () => {
     if (!depositCustomer || depositAmount <= 0) { toast.error('Masukkan jumlah deposit yang valid'); return; }
-    depositLogsStorage.create({ customer_id: depositCustomer.id, amount: depositAmount, type: 'deposit', notes: depositNotes || null, created_by: 'local-user-001' });
-    customersStorage.updateBalance(depositCustomer.id, depositAmount);
-    toast.success('Deposit berhasil ditambahkan');
-    setIsDepositOpen(false); fetchCustomers();
+    try {
+      await depositLogsApi.create({ customer_id: depositCustomer.id, amount: depositAmount, type: 'deposit', notes: depositNotes || null, created_by: 'local-user-001' });
+      await customersApi.update(depositCustomer.id, { deposit_balance: depositCustomer.deposit_balance + depositAmount });
+      toast.success('Deposit berhasil ditambahkan');
+      setIsDepositOpen(false);
+      fetchCustomers();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal menambah deposit', { description: errorMessage });
+    }
   };
 
   // History
-  const openHistory = (c: Customer) => { setHistoryCustomer(c); setDepositLogs(depositLogsStorage.getByCustomerId(c.id)); setIsHistoryOpen(true); };
-
-  // Payment
-  const openPayment = (c: Customer) => {
-    setPaymentCustomer(c);
-    const invoices = transactionsStorage.getAll().filter(t => t.customer_id === c.id && t.status !== 'Lunas');
-    setUnpaidInvoices(invoices);
-    setPaymentAmount(0);
-    setIsPaymentOpen(true);
+  const openHistory = async (c: Customer) => {
+    setHistoryCustomer(c);
+    setIsHistoryOpen(true);
+    try {
+      const logs = await depositLogsApi.getByCustomerId(c.id);
+      setDepositLogs(logs);
+    } catch {
+      setDepositLogs([]);
+    }
   };
 
-  const handlePayment = () => {
-    if (!paymentCustomer || paymentAmount <= 0 || unpaidInvoices.length === 0) { toast.error('Masukkan jumlah pembayaran yang valid'); return; }
-    let remaining = paymentAmount;
-    for (const inv of unpaidInvoices) {
-      if (remaining <= 0) break;
-      const owed = Number(inv.total_price) - Number(inv.amount_paid);
-      const allocated = Math.min(remaining, owed);
-      const newPaid = Number(inv.amount_paid) + allocated;
-      const newStatus: TransactionStatus = newPaid >= Number(inv.total_price) ? 'Lunas' : newPaid > 0 ? 'DP' : 'Piutang';
-      transactionsStorage.update(inv.id, { amount_paid: newPaid, status: newStatus });
-      paymentsStorage.create({ transaction_id: inv.id, amount: allocated, payment_method: 'Cash', notes: 'Mass payment', created_by: 'local-user-001' });
-      remaining -= allocated;
+  // Payment
+  const openPayment = async (c: Customer) => {
+    setPaymentCustomer(c);
+    setPaymentAmount(0);
+    setIsPaymentOpen(true);
+    try {
+      const allTx = await transactionsApi.getAll();
+      const invoices = allTx.filter((t: Transaction) => t.customer_id === c.id && t.status !== 'Lunas');
+      setUnpaidInvoices(invoices);
+    } catch {
+      setUnpaidInvoices([]);
     }
-    toast.success('Pembayaran berhasil dialokasikan');
-    setIsPaymentOpen(false); fetchCustomers();
+  };
+
+  const handlePayment = async () => {
+    if (!paymentCustomer || paymentAmount <= 0 || unpaidInvoices.length === 0) { toast.error('Masukkan jumlah pembayaran yang valid'); return; }
+    try {
+      let remaining = paymentAmount;
+      for (const inv of unpaidInvoices) {
+        if (remaining <= 0) break;
+        const owed = Number(inv.total_price) - Number(inv.amount_paid);
+        const allocated = Math.min(remaining, owed);
+        const newPaid = Number(inv.amount_paid) + allocated;
+        const newStatus: TransactionStatus = newPaid >= Number(inv.total_price) ? 'Lunas' : newPaid > 0 ? 'DP' : 'Piutang';
+        await transactionsApi.update(inv.id, { amount_paid: newPaid, status: newStatus });
+        await paymentsApi.create({ transaction_id: inv.id, amount: allocated, payment_method: 'Cash', notes: 'Mass payment', created_by: 'local-user-001' });
+        remaining -= allocated;
+      }
+      toast.success('Pembayaran berhasil dialokasikan');
+      setIsPaymentOpen(false);
+      fetchCustomers();
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan';
+      toast.error('Gagal memproses pembayaran', { description: errorMessage });
+    }
   };
 
   return (
@@ -119,43 +179,47 @@ export default function Customers() {
 
         <Card className="glass-card"><CardContent className="p-4"><div className="flex flex-col sm:flex-row gap-4"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Cari nama atau telepon..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" /></div><Select value={typeFilter} onValueChange={setTypeFilter}><SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="Tipe" /></SelectTrigger><SelectContent><SelectItem value="all">Semua Tipe</SelectItem><SelectItem value="End User">End User</SelectItem><SelectItem value="Reseller">Reseller</SelectItem></SelectContent></Select></div></CardContent></Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredCustomers.length === 0 ? (
-            <Card className="glass-card col-span-full"><CardContent className="p-8 text-center"><Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" /><p className="text-muted-foreground">Tidak ada customer ditemukan</p></CardContent></Card>
-          ) : (
-            filteredCustomers.map((customer) => (
-              <Card key={customer.id} className="glass-card card-hover">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center"><span className="text-primary font-semibold">{customer.name.charAt(0).toUpperCase()}</span></div>
-                      <div><h3 className="font-medium text-foreground">{customer.name}</h3><Badge variant="outline" className={customer.customer_type === 'Reseller' ? 'bg-accent/20 text-accent border-accent' : 'bg-info/20 text-info border-info'}>{customer.customer_type}</Badge></div>
+        {isFetching ? (
+          <div className="text-center py-8 text-muted-foreground">Memuat data...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredCustomers.length === 0 ? (
+              <Card className="glass-card col-span-full"><CardContent className="p-8 text-center"><Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" /><p className="text-muted-foreground">Tidak ada customer ditemukan</p></CardContent></Card>
+            ) : (
+              filteredCustomers.map((customer) => (
+                <Card key={customer.id} className="glass-card card-hover">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center"><span className="text-primary font-semibold">{customer.name.charAt(0).toUpperCase()}</span></div>
+                        <div><h3 className="font-medium text-foreground">{customer.name}</h3><Badge variant="outline" className={customer.customer_type === 'Reseller' ? 'bg-accent/20 text-accent border-accent' : 'bg-info/20 text-info border-info'}>{customer.customer_type}</Badge></div>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEditDialog(customer)}><Pencil className="h-4 w-4" /></Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDelete(customer.id)}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
                     </div>
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEditDialog(customer)}><Pencil className="h-4 w-4" /></Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => handleDelete(customer.id)}><Trash2 className="h-4 w-4" /></Button>
+                    <div className="space-y-2 text-sm">
+                      {customer.phone && <div className="flex items-center gap-2 text-muted-foreground"><Phone className="h-4 w-4" /><span>{customer.phone}</span></div>}
+                      {customer.address && <div className="flex items-start gap-2 text-muted-foreground"><MapPin className="h-4 w-4 mt-0.5" /><span className="line-clamp-2">{customer.address}</span></div>}
                     </div>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    {customer.phone && <div className="flex items-center gap-2 text-muted-foreground"><Phone className="h-4 w-4" /><span>{customer.phone}</span></div>}
-                    {customer.address && <div className="flex items-start gap-2 text-muted-foreground"><MapPin className="h-4 w-4 mt-0.5" /><span className="line-clamp-2">{customer.address}</span></div>}
-                  </div>
-                  <div className="mt-3 p-2 rounded-lg bg-secondary/30">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm"><Wallet className="h-4 w-4 text-success" /><span className="text-muted-foreground">Saldo Deposit</span></div>
-                      <span className={`font-semibold font-mono-numbers ${customer.deposit_balance > 0 ? 'text-success' : 'text-muted-foreground'}`}>{formatCurrency(customer.deposit_balance)}</span>
+                    <div className="mt-3 p-2 rounded-lg bg-secondary/30">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-sm"><Wallet className="h-4 w-4 text-success" /><span className="text-muted-foreground">Saldo Deposit</span></div>
+                        <span className={`font-semibold font-mono-numbers ${customer.deposit_balance > 0 ? 'text-success' : 'text-muted-foreground'}`}>{formatCurrency(customer.deposit_balance)}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => openDeposit(customer)}><Plus className="h-3 w-3 mr-1" />Deposit</Button>
-                    <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => openHistory(customer)}><History className="h-3 w-3 mr-1" />Riwayat</Button>
-                    <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => openPayment(customer)}><CreditCard className="h-3 w-3 mr-1" />Bayar</Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
+                    <div className="mt-3 flex gap-2">
+                      <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => openDeposit(customer)}><Plus className="h-3 w-3 mr-1" />Deposit</Button>
+                      <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => openHistory(customer)}><History className="h-3 w-3 mr-1" />Riwayat</Button>
+                      <Button size="sm" variant="outline" className="flex-1 text-xs" onClick={() => openPayment(customer)}><CreditCard className="h-3 w-3 mr-1" />Bayar</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        )}
 
         {/* Create/Edit Dialog */}
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
